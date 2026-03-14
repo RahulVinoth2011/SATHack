@@ -1,0 +1,2457 @@
+user:
+<user_query>
+
+hEY THERE
+</user_query>
+
+assistant:
+Hey there — what would you like to work on? I see you have `Networking.java` open in the SCOUT-LC project. Need help with that or something else?
+
+user:
+<user_query>
+
+I’m building a multi-agent robotics system where Raspberry Pi “minions” connect to a Java server over TCP.
+
+Each Pi controls motors and a VL53L1X ToF distance sensor. The Java server:
+
+Accepts TCP connections from multiple Pis
+
+Sends movement + servo commands as JSON
+
+Receives telemetry and scan data
+
+Feeds scan data into a mapping system (ScoutLite)
+
+Right now:
+
+The Pi successfully connects to the server
+
+JSON messages are being exchanged
+
+But movement commands are not executing properly
+
+Some commands are received but marked as "Unknown command"
+
+What I need help with:
+
+Verifying that JSON command formatting between Java and Python matches exactly
+
+Ensuring commands are actually being sent over the socket
+
+Debugging why valid commands are not triggering actions on the Pi
+
+The goal is reliable real-time bidirectional communication between Java (server) and Python (Pi).
+</user_query>
+
+assistant:
+Exploring the codebase to map the Java server and Python Pi command flow and locate the source of the "Unknown command" errors.
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+[Tool call] Glob
+  target_directory: c:\Users\rahul\ISEF_2026_ROBO
+  glob_pattern: **/*.py
+[Tool call] SemanticSearch
+  query: Where are movement commands or JSON messages sent to the Pi client?
+  target_directories: ["c:\\Users\\rahul\\ISEF_2026_ROBO"]
+[Tool call] Grep
+  pattern: Unknown command
+  path: c:\Users\rahul\ISEF_2026_ROBO
+
+[Tool result] Read
+
+[Tool result] Glob
+
+[Tool result] SemanticSearch
+
+[Tool result] Grep
+
+assistant:
+[Tool call] Glob
+  target_directory: c:\Users\rahul\ISEF_2026_ROBO
+  glob_pattern: **/*
+[Tool call] Grep
+  pattern: type|angle|value|move|motor|servo
+  path: c:\Users\rahul\ISEF_2026_ROBO
+  -i: true
+[Tool call] LS
+  path: c:\Users\rahul\ISEF_2026_ROBO
+
+[Tool result] Glob
+
+[Tool result] Grep
+
+[Tool result] LS
+
+assistant:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+[Tool call] Grep
+  pattern: \.py
+  path: c:\Users\rahul\ISEF_2026_ROBO
+[Tool call] LS
+  target_directory: c:\Users\rahul\ISEF_2026_ROBO
+
+[Tool result] Read
+
+[Tool result] Grep
+
+[Tool result] LS
+
+assistant:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\MotionController.java
+[Tool call] Grep
+  pattern: forward|backward|left|right|stop|speed|motor
+  path: c:\Users\rahul\ISEF_2026_ROBO
+  -i: true
+
+[Tool result] Read
+
+[Tool result] Grep
+
+assistant:
+Here’s a concise analysis and what to change so the Pi and Java server agree on the protocol.
+
+---
+
+## JSON command protocol (Java side)
+
+You’re using **`Networking.java`** with console input. Here’s what it sends:
+
+| Console Input | JSON Sent |
+|---------------|-----------|
+| `pan scan` | `{"type":"pan_scan"}` |
+| `pan 45` | `{"type":"pan","angle":45}` |
+| `forward 100` | `{"type":"forward","value":100}` |
+| `stop` (single word) | `{"type":"stop"}` |
+
+**ReconServer** (if used) is different: it turns the whole line into `type`:
+
+- `forward 100` → `{"type":"forward 100"}` (one string, not `type` + `value`)
+
+So first step: confirm which Java main you run — **Networking** or **ReconServer**.
+
+---
+
+## Common causes of "Unknown command" on the Pi
+
+### 1. Command type string mismatch
+
+Python is probably doing something like:
+
+```python
+if cmd["type"] == "move_forward":   # but Java sends "forward"
+if cmd["type"] == "forward ":       # trailing space or typo
+```
+
+Java sends `forward`, `backward`, `pan`, `pan_scan`, `stop`, etc. Python must use exactly those strings (case-sensitive).
+
+### 2. Type vs value vs angle
+
+Java formats:
+
+- `{"type":"forward","value":100}` → `value` is a number
+- `{"type":"pan","angle":45}` → uses `angle`, not `value`
+- `{"type":"stop"}` → only `type`, no extra fields
+
+Python should:
+
+- Check for `angle` only for `pan`
+- Check for `value` only for movement commands that need a numeric argument
+- Accept `stop` with no extra fields
+
+### 3. Empty / malformed lines
+
+`readline()` can return empty lines. Ignore them before parsing:
+
+```python
+line = sock.recv(...).decode().strip()
+if not line:
+    continue
+```
+
+### 4. Buffer / threading
+
+`PrintWriter` with `autoFlush=true` should flush on `println`. If you ever use `print` or non-flushing writers on either side, some JSON lines might be delayed or stuck.
+
+---
+
+## Reference Python command handler
+
+The Pi handler should match the Java protocol. Example:
+
+```python
+import json
+
+def handle_command(data):
+    try:
+        cmd = json.loads(data)
+    except json.JSONDecodeError:
+        print("Invalid JSON:", data)
+        return
+    
+    ctype = cmd.get("type")
+    if not ctype:
+        print("Unknown command: no 'type' field")
+        return
+    
+    if ctype == "pan_scan":
+        # trigger pan scan
+        do_pan_scan()
+    elif ctype == "pan":
+        angle = cmd.get("angle", 0)
+        set_servo_angle(angle)
+    elif ctype == "forward":
+        value = cmd.get("value", 0)
+        move_forward(value)
+    elif ctype == "backward":
+        value = cmd.get("value", 0)
+        move_backward(value)
+    elif ctype == "left":
+        value = cmd.get("value", 0)
+        turn_left(value)
+    elif ctype == "right":
+        value = cmd.get("value", 0)
+        turn_right(value)
+    elif ctype == "stop":
+        stop_motors()
+    elif ctype == "ack":
+        pass  # server ACK, ignore
+    else:
+        print("Unknown command:", ctype)
+```
+
+The important part: `ctype` must be compared to exactly what Java sends (`forward`, `pan`, `pan_scan`, `stop`, etc.).
+
+---
+
+## Verification that commands are sent
+
+On the server side:
+
+- `[QUEUE]` = command queued
+- `[SEND]` = command written to the socket
+
+If you see `[QUEUE]` but never `[SEND]` for some minions, the send thread may not be running or the queue may not be drained for that client.
+
+---
+
+## Next steps
+
+1. Add logging on the Pi to see the raw bytes/lines it receives, e.g.:
+   ```python
+   print("RAW:", repr(line))
+   print("PARSED:", cmd)
+   ```
+2. Paste your Pi Python code (especially the part that parses JSON and prints "Unknown command"), and we can line it up exactly with what Java sends.
+3. Confirm whether you use **Networking.java** or **ReconServer.java**; if ReconServer, you’ll either need to change its JSON construction or adjust the Pi to handle its different format.
+
+If you share your Pi client code or point to its file path in another folder, I can give a concrete patch that matches your Java server.
+
+user:
+<user_query>
+
+Can I send you the pi code?
+</user_query>
+
+assistant:
+Yes, please share the Pi code.  
+
+Once I can see how the Pi parses and handles commands, I can:
+
+1. **Align the protocol** – Check that JSON field names (`type`, `angle`, `value`, etc.) and values match what Java sends.
+2. **Track down "Unknown command"** – Identify which messages hit the fallback branch and why.
+3. **Verify the receive loop** – Ensure the Pi reads lines and parses JSON in a way that matches how Java sends them.
+
+You can paste the relevant parts here or tell me where the file(s) live in your project, and I’ll review them.
+
+user:
+<user_query>
+
+# pi_send.py
+# Raspberry Pi:
+#  - I2C master to Pico (motion)
+#  - I2C master to VL53L1X (distance)
+#  - TCP client to ReconServer for telemetry
+
+import smbus2
+import time
+import json
+import socket
+import threading
+
+import board
+import busio
+import adafruit_vl53l1x
+
+# ----------------------------
+# CONFIG
+# ----------------------------
+I2C_BUS = 1
+PICO_ADDR = 0x41
+TICK = 0.15
+PAN_LEFT = 40
+PAN_RIGHT = 140
+PAN_STEP = 4
+
+# ----------------------------
+# SERVER CONFIG
+# ----------------------------
+SERVER_HOST = "192.168.0.142"
+SERVER_PORT = 5000
+
+# ----------------------------
+# PICO I2C SETUP
+# ----------------------------
+bus = smbus2.SMBus(I2C_BUS)
+
+def send_command(command: str):
+    cmd_bytes = (command.strip() + "\n").encode("utf-8")
+    for b in cmd_bytes:
+        bus.write_byte(PICO_ADDR, b)
+        time.sleep(0.002)
+    print(f"[PICO] Sent: {command}")
+
+def set_pan(angle: int):
+    send_command(f"pan {angle}")
+
+# ----------------------------
+# TOF SETUP
+# ----------------------------
+i2c = busio.I2C(board.SCL, board.SDA)
+tof = adafruit_vl53l1x.VL53L1X(i2c)
+
+tof.distance_mode = 1
+tof.timing_budget = 50
+tof.start_ranging()
+
+print("[OK] VL53L1X started")
+
+# ----------------------------
+# TCP CLIENT
+# ----------------------------
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    sock.connect((SERVER_HOST, SERVER_PORT))
+    print(f"[OK] Connected to server {SERVER_HOST}:{SERVER_PORT}")
+except Exception as e:
+    print(f"[ERROR] Could not connect to server: {e}")
+    sock = None
+
+def send_telemetry(data: dict):
+    if sock:
+        try:
+            packet = json.dumps(data) + "\n"
+            sock.sendall(packet.encode("utf-8"))
+        except Exception as e:
+            print(f"[ERROR] Sending telemetry: {e}")
+
+# ----------------------------
+# EXECUTION ENGINE
+# ----------------------------
+def execute_command(cmd_obj):
+    ctype = cmd_obj.get("type")
+
+    # PAN SCAN
+    if ctype == "pan_scan":
+        print("[AUTO] Starting pan scan")
+        for angle in range(PAN_LEFT, PAN_RIGHT + 1, PAN_STEP):
+            set_pan(angle)
+
+            if tof.data_ready:
+                distance = tof.distance
+                tof.clear_interrupt()
+                print(f"[SCAN] pan={angle} | dist={distance:.1f}")
+
+                send_telemetry({
+                    "type": "pan_scan",
+                    "pan": angle,
+                    "distance": distance
+                })
+
+            time.sleep(TICK)
+
+        set_pan(90)
+        print("[SCAN] complete | returned to 90")
+
+    # PAN TO ANGLE
+    elif ctype == "pan":
+        angle = cmd_obj.get("angle", 90)
+        set_pan(angle)
+        print(f"[AUTO] Pan set to {angle}")
+
+        send_telemetry({
+            "type": "pan",
+            "pan": angle
+        })
+
+    # MOVEMENT
+    elif ctype in ["forward", "backward", "left", "right", "stop"]:
+        value = cmd_obj.get("value", 1)
+        cmd_str = f"{ctype} {value}"
+        print(f"[AUTO] Movement: {cmd_str}")
+        send_command(cmd_str)
+
+    else:
+        print(f"[AUTO] Unknown command: {cmd_obj}")
+
+# ----------------------------
+# TCP RECEIVE LOOP
+# ----------------------------
+def tcp_receive_loop():
+    if not sock:
+        return
+
+    while True:
+        try:
+            data = sock.recv(1024)
+            if not data:
+                continue
+
+            messages = data.decode("utf-8").split("\n")
+
+            for msg in messages:
+                if msg.strip() == "":
+                    continue
+
+                try:
+                    cmd_obj = json.loads(msg)
+                    print(f"[AUTO] Received JSON: {cmd_obj}")
+                    execute_command(cmd_obj)  # <-- DIRECT EXECUTION
+                except Exception as e:
+                    print(f"[ERROR] Parsing server command: {e}")
+
+        except Exception as e:
+            print(f"[ERROR] TCP receive: {e}")
+            time.sleep(0.5)
+
+threading.Thread(target=tcp_receive_loop, daemon=True).start()
+
+# ----------------------------
+# MANUAL CLI LOOP
+# ----------------------------
+print("\nMinion I2C Control + ToF + Telemetry")
+print("------------------------------------")
+print("Commands: forward 2 | backward 1 | left 0.5 | right 1 | stop | pan <angle> | pan scan")
+print("Type 'exit' to quit\n")
+
+try:
+    while True:
+        cmd = input("Command: ").strip()
+
+        if cmd.lower() == "exit":
+            break
+
+        if cmd == "":
+            continue
+
+        # Manual pan scan
+        if cmd.lower() == "pan scan":
+            execute_command({"type": "pan_scan"})
+            continue
+
+        # Manual pan angle
+        if cmd.lower().startswith("pan "):
+            try:
+                angle = int(cmd.split()[1])
+                execute_command({"type": "pan", "angle": angle})
+            except:
+                print("[ERROR] Invalid pan command")
+            continue
+
+        # Manual movement
+        parts = cmd.split()
+        if parts[0] in ["forward", "backward", "left", "right", "stop"]:
+            value = float(parts[1]) if len(parts) > 1 else 1
+            execute_command({"type": parts[0], "value": value})
+            continue
+
+        print("[ERROR] Unknown command")
+
+except KeyboardInterrupt:
+    print("\nInterrupted")
+
+finally:
+    tof.stop_ranging()
+    if sock:
+        sock.close()
+
+</user_query>
+
+assistant:
+From comparing your Pi code with the Java server, two things stand out:
+
+---
+
+## 1. ACK messages → "Unknown command"
+
+The server sends `{"type":"ack","timestamp":...}` after every Pi message (see `Networking.java` around line 171). The Pi receives these, but `execute_command()` has no case for `"ack"`, so they fall through to:
+
+```python
+else:
+    print(f"[AUTO] Unknown command: {cmd_obj}")
+```
+
+So every ACK is printed as "Unknown command". That’s likely what you’re seeing.
+
+**Fix:** handle ACKs explicitly:
+
+```python
+elif ctype == "ack":
+    pass  # Server acknowledgment, ignore
+```
+
+Place this before the `else:` in `execute_command`.
+
+---
+
+## 2. TCP message fragmentation
+
+`sock.recv(1024)` can return partial data. A JSON line like `{"type":"forward","value":100}\n` might arrive as:
+
+- First recv: `{"type":"forward","value`
+- Second recv: `100}\n{"type":"ack"...`
+
+Then `split("\n")` produces:
+
+- `{"type":"forward","value` → invalid JSON → exception
+- `100}` → invalid JSON → exception
+
+Use a line buffer and only parse full lines:
+
+```python
+buffer = ""
+while True:
+    try:
+        data = sock.recv(1024)
+        if not data:
+            continue
+        buffer += data.decode("utf-8")
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                cmd_obj = json.loads(line)
+                print(f"[AUTO] Received JSON: {cmd_obj}")
+                execute_command(cmd_obj)
+            except json.JSONDecodeError as e:
+                print(f"[ERROR] Invalid JSON: {line!r} - {e}")
+    except Exception as e:
+        ...
+```
+
+---
+
+## 3. JSON format match
+
+Your Java and Python formats line up:
+
+| Command   | Java sends                           | Python expects        |
+|----------|---------------------------------------|------------------------|
+| pan scan | `{"type":"pan_scan"}`                 | ✓ `pan_scan`          |
+| pan 45   | `{"type":"pan","angle":45}`           | ✓ `pan` + `angle`     |
+| forward 100 | `{"type":"forward","value":100}`   | ✓ `forward` + `value` |
+| stop     | `{"type":"stop"}`                     | ✓ `stop`              |
+
+---
+
+## Summary
+
+- Add an `ack` handler in `execute_command` to stop ACKs being reported as "Unknown command".
+- Add a line buffer in the receive loop so only complete lines are parsed and partial reads don’t cause parse errors.
+
+user:
+<user_query>
+
+Yeah? So can you modify my @SCOUT-LC/src/main/java/Networking.java to actually work with the pi_send.py?
+</user_query>
+
+assistant:
+Removing the ACK that causes the Pi to print "Unknown command". Checking `Networking.java` for any other issues:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ScoutLite.java
+  limit: 50
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ScoutLite.java
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Point3D.java
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+Checking for JSON support in the project:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\build.gradle
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\build.gradle
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+Making changes: fixing `Point3D`, removing the ACK, and parsing Pi JSON telemetry. Adding `ScoutLite.addMinion` so scan data is processed when minions connect.
+[Tool call] TodoWrite
+  todos: [{"id":"1","content":"Fix Point3D reference in Networking.java","status":"in_progress"},{"id":"2","content":"Remove ACK that causes Unknown command on Pi","status":"pending"},{"id":"3","content":"Parse Pi JSON telemetry and feed to ScoutLite","status":"pending"},{"id":"4","content":"Add addMinion to ScoutLite for dynamic registration","status":"pending"}]
+  merge: false
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string: import java.io.*;
+import java.net.*;
+import java.time.Instant;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger; // coolio counter for naming threads
+import java.util.Queue;
+import java.util.LinkedList;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map; // Yogitha akka was using this in her hw for clg :)
+  new_string: import java.io.*;
+import java.net.*;
+import java.time.Instant;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger; // coolio counter for naming threads
+import java.util.Queue;
+import java.util.LinkedList;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map; // Yogitha akka was using this in her hw for clg :)
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+[Tool result] TodoWrite
+
+[Tool result] StrReplace
+
+assistant:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:                 String message;
+                while ((message = in.readLine()) != null) {
+                    long timestamp = Instant.now().toEpochMilli();
+                    System.out.println("[DATA] [" + minionIP + "] @" + timestamp + " -> " + message);
+
+                    if (message.startsWith("SCAN")) {
+                        ArrayList<ScoutLite.Point3D> points = new ArrayList<>();
+                        String[] tokens = message.split(" ");
+                        for (int i = 1; i < tokens.length; i++) {
+                            String[] xyz = tokens[i].split(",");
+                            int x = Integer.parseInt(xyz[0]);
+                            int y = Integer.parseInt(xyz[1]);
+                            int z = Integer.parseInt(xyz[2]);
+                            int hazard = Integer.parseInt(xyz[3]);
+                            points.add(new ScoutLite.Point3D(x, y, z, hazard));
+                        }
+                        scoutLite.correctWithScan(minionIP, points);
+                    }
+
+                    // ACK minion
+                    out.println("{\"type\":\"ack\",\"timestamp\":" + timestamp + "}");
+                }
+  new_string:                 String message;
+                while ((message = in.readLine()) != null) {
+                    long timestamp = Instant.now().toEpochMilli();
+                    System.out.println("[DATA] [" + minionIP + "] @" + timestamp + " -> " + message);
+
+                    // Pi sends JSON telemetry (pi_send.py) or legacy SCAN format
+                    if (message.startsWith("{")) {
+                        // Parse Pi JSON: {"type":"pan_scan","pan":40,"distance":123.5} or {"type":"pan","pan":90}
+                        try {
+                            JsonObject obj = JsonParser.parseString(message).getAsJsonObject();
+                            String type = obj.has("type") ? obj.get("type").getAsString() : "";
+                            if ("pan_scan".equals(type) && obj.has("pan") && obj.has("distance")) {
+                                int pan = obj.get("pan").getAsInt();
+                                int dist = obj.get("distance").getAsInt();
+                                int hazard = obj.has("hazard") ? obj.get("hazard").getAsInt() : 1;
+                                ArrayList<Point3D> points = new ArrayList<>();
+                                points.add(new Point3D(pan, dist, 0, hazard));
+                                scoutLite.correctWithScan(minionIP, points);
+                            }
+                        } catch (Exception e) {
+                            System.out.println("[WARN] JSON parse: " + e.getMessage());
+                        }
+                    } else if (message.startsWith("SCAN")) {
+                        ArrayList<Point3D> points = new ArrayList<>();
+                        String[] tokens = message.split(" ");
+                        for (int i = 1; i < tokens.length; i++) {
+                            String[] xyz = tokens[i].split(",");
+                            int x = Integer.parseInt(xyz[0]);
+                            int y = Integer.parseInt(xyz[1]);
+                            int z = Integer.parseInt(xyz[2]);
+                            int hazard = Integer.parseInt(xyz[3]);
+                            points.add(new Point3D(x, y, z, hazard));
+                        }
+                        scoutLite.correctWithScan(minionIP, points);
+                    }
+                    // No ACK sent — Pi treats {"type":"ack"} as Unknown command
+                }
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ScoutLite.java
+  limit: 95
+
+[Tool result] StrReplace
+
+[Tool result] Read
+
+assistant:
+Registering minions on connect and handling float distance values.
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:                             if ("pan_scan".equals(type) && obj.has("pan") && obj.has("distance")) {
+                                int pan = obj.get("pan").getAsInt();
+                                int dist = obj.get("distance").getAsInt();
+  new_string:                             if ("pan_scan".equals(type) && obj.has("pan") && obj.has("distance")) {
+                                int pan = obj.get("pan").getAsInt();
+                                int dist = (int) obj.get("distance").getAsDouble(); // Pi sends float
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:             String minionIP = socket.getInetAddress().getHostAddress();
+            System.out.println("[CONNECT] Minion connected: " + minionIP);
+
+            try (
+  new_string:             String minionIP = socket.getInetAddress().getHostAddress();
+            System.out.println("[CONNECT] Minion connected: " + minionIP);
+            scoutLite.addMinion(minionIP, 0, 0, 0);
+
+            try (
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ScoutLite.java
+  old_string:     // Update movement with drift
+    public void updateMovement(String minionName, int newX, int newY, int newZ) {
+  new_string:     /** Register a minion dynamically (e.g. when Pi connects via TCP) */
+    public void addMinion(String minionName, int x, int y, int z) {
+        minionPoses.put(minionName, new Pose(x, y, z, 0.0));
+    }
+
+    // Update movement with drift
+    public void updateMovement(String minionName, int newX, int newY, int newZ) {
+[Tool call] TodoWrite
+  todos: [{"id":"1","content":"Fix Point3D reference in Networking.java","status":"completed"},{"id":"2","content":"Remove ACK that causes Unknown command on Pi","status":"completed"},{"id":"3","content":"Parse Pi JSON telemetry and feed to ScoutLite","status":"completed"},{"id":"4","content":"Add addMinion to ScoutLite for dynamic registration","status":"completed"}]
+  merge: true
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+[Tool result] TodoWrite
+
+assistant:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+[Tool call] Shell
+  command: cd "c:\Users\rahul\ISEF_2026_ROBO" && .\gradlew :SCOUT-LC:compileJava --quiet 2>&1
+  description: Compile Java to verify changes
+
+[Tool result] Read
+
+[Tool result] Shell
+
+assistant:
+[Tool call] Shell
+  command: cd c:\Users\rahul\ISEF_2026_ROBO; .\gradlew :SCOUT-LC:compileJava --quiet 2>&1
+  description: Compile Java (PowerShell syntax)
+
+[Tool result] Shell
+
+assistant:
+Summary of changes:
+
+## `Networking.java`
+
+1. **Fixed `Point3D` usage** – Switched from `ScoutLite.Point3D` to top-level `Point3D`.
+2. **Removed ACK** – The server no longer sends `{"type":"ack"}` so the Pi won’t log “Unknown command”.
+3. **Pi JSON telemetry handling** – Added parsing for Pi telemetry:
+   - `{"type":"pan_scan","pan":40,"distance":123.5}` → `ScoutLite.correctWithScan()`
+   - `{"type":"pan","pan":90}` → Logged (no mapping update).
+4. **Minion registration** – When a Pi connects, it is registered in ScoutLite so its scan data is used.
+5. **Gson imports** – Added imports for JSON parsing.
+
+## `ScoutLite.java`
+
+1. **`addMinion()`** – New method to register Pi clients dynamically when they connect.
+
+---
+
+The build compiles successfully. With these updates:
+
+- Console commands (`forward 100`, `pan scan`, `stop`, etc.) are sent as JSON to the Pi.
+- Pi telemetry (`pan_scan`, `pan`) is parsed and fed into ScoutLite.
+- No more “Unknown command” on the Pi from ACK messages.
+
+You should still add the line-buffering fix in `pi_send.py` for robustness against fragmented TCP data. If you want, I can write that change in `pi_send.py` for you.
+
+user:
+<user_query>
+
+Alrigth so now if I run it in gradle it should work?
+</user_query>
+
+assistant:
+Yes. It should run correctly when started via Gradle.
+
+- The project compiles successfully.
+- `mainClass = 'Networking'` is set in `build.gradle`, so Gradle will start `Networking.main`.
+- The server will listen on port 5000.
+
+**To run it:**
+```bash
+.\gradlew :SCOUT-LC:run
+```
+
+(or use your IDE’s Gradle run task for `SCOUT-LC`)
+
+**For end-to-end operation:**
+- Pi (`pi_send.py`) must be running and connected to `192.168.0.142:5000`.
+- Server and Pi must be on the same network so they can reach each other.
+
+user:
+<user_query>
+
+Also, if I run it what WILL happen? Will my robot move automatiaclly and begin pathfinding or do I still need to manyally ty[p ein everything?
+</user_query>
+
+assistant:
+With the current **Networking** setup, the robot will **not** move or pathfind on its own.
+
+Here's what happens:
+
+1. **Console input** – A thread waits for you to type commands and press Enter.
+2. **Command dispatch** – Whatever you type (e.g. `forward 100`, `pan scan`, `stop`) is turned into JSON and sent to all connected Pis.
+3. **Telemetry** – When the Pi sends telemetry (pan_scan, pan, etc.), the server parses it and passes it into ScoutLite for mapping.
+4. **No autonomy** – The server does not:
+   - Plan paths
+   - Decide where to go next
+   - Send movement commands automatically
+
+So movement is driven by your console input only. You have to type each command yourself.
+
+---
+
+If you want autonomous behavior, you’d need to add a control loop that:
+
+- Uses ScoutLite (or another planner) to plan paths
+- Sends movement commands to the Pi based on those plans
+
+That kind of logic exists in **ReconServer.java** (which uses `SwarmPlanner` and `smartSwarmReplan`), but it’s not in **Networking.java** right now. ReconServer is more autonomous; Networking is console-driven.
+
+user:
+<user_query>
+
+Alright realllll quickly, does this automatically sync with VSCode or do I need to do smth different?
+</user_query>
+
+assistant:
+There’s nothing special you need to do. Gradle compiles and runs whatever is on disk.
+
+- **Save your files** (Ctrl+S) before running `gradlew run`. If auto-save is on, you’re fine.
+- Cursor/VS Code edits go straight to disk; Gradle reads those files.
+- No extra sync step between Cursor and Gradle.
+
+user:
+<user_query>
+
+Is this normal?Reusing configuration cache.
+<=========----> 75% EXECUTING [3s]
+> :SCOUT-LC:run
+> IDLE
+[ERROR] Server failure!
+java.net.BindException: Address already in use: bind
+        at java.base/sun.nio.ch.Net.bind0(Native Method)
+        at java.base/sun.nio.ch.Net.bind(Unknown Source)
+        at java.base/sun.nio.ch.Net.bind(Unknown Source)
+        at java.base/sun.nio.ch.NioSocketImpl.bind(Unknown Source)
+
+> Task :SCOUT-LC:run
+[ReconServer] Networking module starting...
+[ReconServer] Listening on port 5000 ...
+
+</user_query>
+
+assistant:
+Yes, that’s expected: **port 5000 is already in use**, so the server can’t bind to it.
+
+**Typical causes:**
+1. A previous run of the server is still running (same app or another terminal).
+2. Another program (e.g. `pi_send.py` or another service) is using port 5000.
+
+**What to do:**
+
+1. **Find what’s using port 5000** (PowerShell):
+   ```powershell
+   netstat -ano | findstr :5000
+   ```
+   The last column is the process ID (PID).
+
+2. **Stop that process** (replace `1234` with the PID):
+   ```powershell
+   taskkill /PID 1234 /F
+   ```
+
+3. **Or close other things** – Stop any other Gradle runs, other terminals where the server might be running, and any Python scripts using port 5000.
+
+4. **Then run the server again:**
+   ```powershell
+   .\gradlew :SCOUT-LC:run
+   ```
+
+user:
+<user_query>
+
+Wait so did you only make changes to @SCOUT-LC/src/main/java/Networking.java ?
+</user_query>
+
+assistant:
+No. I changed **two** files:
+
+1. **`Networking.java`** – Gson imports, Point3D fix, ACK removal, JSON parsing for Pi telemetry, and calling `scoutLite.addMinion()` when a Pi connects.
+
+2. **`ScoutLite.java`** – Added `addMinion()` so Pis can be registered when they connect (otherwise `correctWithScan` would fail because the minion wouldn't be in the map).
+
+user:
+<user_query>
+
+Why doesnt anything move when I type forward 1? shouldn't it move forward for one second?
+</user_query>
+
+assistant:
+Here’s how the flow works and where it can stop:
+
+**Flow:**
+1. **Java** – Types `forward 1` → sends `{"type":"forward","value":1}` over TCP.
+2. **Pi (`pi_send.py`)** – Receives JSON, forwards `"forward 1"` to the **Pico** via I2C.
+3. **Pico** – Receives the I2C string and drives the motors.
+
+**Where it can fail**
+
+1. **Pi not connected to Java**  
+   Check the Java console when you start it. Do you see `[CONNECT] Minion connected: 192.168.x.x`? If not, the Pi isn’t connected and commands never reach it.
+
+2. **Pi not receiving the command**  
+   On the Pi, you should see logs like:
+   - `[AUTO] Received JSON: {'type': 'forward', 'value': 1}`
+   - `[AUTO] Movement: forward 1`
+   - `[PICO] Sent: forward 1`  
+   If those never appear, the Pi isn’t getting the command over TCP.
+
+3. **Pico not moving**  
+   The Pi only forwards `"forward 1"` to the Pico over I2C. Whether `1` means “1 second” or something else depends on the Pico firmware. If the Pico doesn’t handle `"forward X"` (or expects a different format), nothing will move.
+
+4. **Hardware**  
+   Motors, wiring, power, and I2C connections must be correct.
+
+---
+
+**Quick checks**
+
+- In the Java console: do you see `[SEND] To [IP]: {"type":"forward","value":1}` when you type `forward 1`?
+- In the Pi terminal: do you see the `[AUTO] Received JSON` and `[PICO] Sent` lines when you type `forward 1`?
+- Does the robot move when you run `forward 1` directly on the Pi (in its CLI), without using the Java server?
+
+That will show whether the problem is TCP (Java → Pi), I2C (Pi → Pico), or Pico firmware. If you can share what the Pi prints (and how your Pico firmware expects commands), we can narrow it down further.
+
+user:
+<user_query>
+
+No but if I do pan_scan it workd...
+</user_query>
+
+assistant:
+So the important difference is:
+
+- **pan_scan** works → the Pi is getting commands and the Pico is handling `"pan X"` for the servo.
+- **forward** doesn’t work → the Pico likely isn’t handling motor commands the same way.
+
+So the Java → Pi link is fine, and the Pico is handling servo commands.
+
+That points to the **Pico firmware**: it probably has logic for `"pan X"` but not for `"forward X"`, or it expects a different format (different command names, units, etc.).
+
+Check your Pico code and confirm:
+
+1. Does it parse and handle `"forward"`, `"backward"`, `"left"`, `"right"`?
+2. What exact format does it expect (e.g. `"forward 1"` vs `"fwd 1"` vs `"M F 1"`)?
+3. Are the motor control pins and wiring set up in the Pico firmware?
+
+If you can share the Pico firmware (or the relevant command-handling part), I can help match the Pi’s `"forward 1"` format to what the Pico expects.
+
+user:
+<user_query>
+
+No dont worry about the pico code dude, it gets its signals from the pi...right now I just need to know why the server isnt sending the correct signals to the pi...wanna see the pi code again?
+</user_query>
+
+assistant:
+Yes—please share the Pi code again.
+
+On the Java side, both commands go out the same way:
+
+- `pan scan` → `{"type":"pan_scan"}`
+- `forward 1` → `{"type":"forward","value":1}`
+
+If pan_scan works, the server → Pi link is fine for that message. To see why forward might not, we need to check how the Pi receives and handles these two JSON messages in its receive loop and `execute_command`.
+
+user:
+<user_query>
+
+# pi_send.py
+# Raspberry Pi:
+#  - I2C master to Pico (motion)
+#  - I2C master to VL53L1X (distance)
+#  - TCP client to ReconServer for telemetry
+
+import smbus2
+import time
+import json
+import socket
+import threading
+
+import board
+import busio
+import adafruit_vl53l1x
+
+# ----------------------------
+# CONFIG
+# ----------------------------
+I2C_BUS = 1
+PICO_ADDR = 0x41
+TICK = 0.15
+PAN_LEFT = 40
+PAN_RIGHT = 140
+PAN_STEP = 4
+
+# ----------------------------
+# SERVER CONFIG
+# ----------------------------
+SERVER_HOST = "192.168.0.142"
+SERVER_PORT = 5000
+
+# ----------------------------
+# PICO I2C SETUP
+# ----------------------------
+bus = smbus2.SMBus(I2C_BUS)
+
+def send_command(command: str):
+    cmd_bytes = (command.strip() + "\n").encode("utf-8")
+    for b in cmd_bytes:
+        bus.write_byte(PICO_ADDR, b)
+        time.sleep(0.002)
+    print(f"[PICO] Sent: {command}")
+
+def set_pan(angle: int):
+    send_command(f"pan {angle}")
+
+# ----------------------------
+# TOF SETUP
+# ----------------------------
+i2c = busio.I2C(board.SCL, board.SDA)
+tof = adafruit_vl53l1x.VL53L1X(i2c)
+
+tof.distance_mode = 1
+tof.timing_budget = 50
+tof.start_ranging()
+
+print("[OK] VL53L1X started")
+
+# ----------------------------
+# TCP CLIENT
+# ----------------------------
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    sock.connect((SERVER_HOST, SERVER_PORT))
+    print(f"[OK] Connected to server {SERVER_HOST}:{SERVER_PORT}")
+except Exception as e:
+    print(f"[ERROR] Could not connect to server: {e}")
+    sock = None
+
+def send_telemetry(data: dict):
+    if sock:
+        try:
+            packet = json.dumps(data) + "\n"
+            sock.sendall(packet.encode("utf-8"))
+        except Exception as e:
+            print(f"[ERROR] Sending telemetry: {e}")
+
+# ----------------------------
+# EXECUTION ENGINE
+# ----------------------------
+def execute_command(cmd_obj):
+    ctype = cmd_obj.get("type")
+
+    # PAN SCAN
+    if ctype == "pan_scan":
+        print("[AUTO] Starting pan scan")
+        for angle in range(PAN_LEFT, PAN_RIGHT + 1, PAN_STEP):
+            set_pan(angle)
+
+            if tof.data_ready:
+                distance = tof.distance
+                tof.clear_interrupt()
+                print(f"[SCAN] pan={angle} | dist={distance:.1f}")
+
+                send_telemetry({
+                    "type": "pan_scan",
+                    "pan": angle,
+                    "distance": distance
+                })
+
+            time.sleep(TICK)
+
+        set_pan(90)
+        print("[SCAN] complete | returned to 90")
+
+    # PAN TO ANGLE
+    elif ctype == "pan":
+        angle = cmd_obj.get("angle", 90)
+        set_pan(angle)
+        print(f"[AUTO] Pan set to {angle}")
+
+        send_telemetry({
+            "type": "pan",
+            "pan": angle
+        })
+
+    # MOVEMENT
+    elif ctype in ["forward", "backward", "left", "right", "stop"]:
+        value = cmd_obj.get("value", 1)
+        cmd_str = f"{ctype} {value}"
+        print(f"[AUTO] Movement: {cmd_str}")
+        send_command(cmd_str)
+
+    else:
+        print(f"[AUTO] Unknown command: {cmd_obj}")
+
+# ----------------------------
+# TCP RECEIVE LOOP
+# ----------------------------
+def tcp_receive_loop():
+    if not sock:
+        return
+
+    while True:
+        try:
+            data = sock.recv(1024)
+            if not data:
+                continue
+
+            messages = data.decode("utf-8").split("\n")
+
+            for msg in messages:
+                if msg.strip() == "":
+                    continue
+
+                try:
+                    cmd_obj = json.loads(msg)
+                    print(f"[AUTO] Received JSON: {cmd_obj}")
+                    execute_command(cmd_obj)  # <-- DIRECT EXECUTION
+                except Exception as e:
+                    print(f"[ERROR] Parsing server command: {e}")
+
+        except Exception as e:
+            print(f"[ERROR] TCP receive: {e}")
+            time.sleep(0.5)
+
+threading.Thread(target=tcp_receive_loop, daemon=True).start()
+
+# ----------------------------
+# MANUAL CLI LOOP
+# ----------------------------
+print("\nMinion I2C Control + ToF + Telemetry")
+print("------------------------------------")
+print("Commands: forward 2 | backward 1 | left 0.5 | right 1 | stop | pan <angle> | pan scan")
+print("Type 'exit' to quit\n")
+
+try:
+    while True:
+        cmd = input("Command: ").strip()
+
+        if cmd.lower() == "exit":
+            break
+
+        if cmd == "":
+            continue
+
+        # Manual pan scan
+        if cmd.lower() == "pan scan":
+            execute_command({"type": "pan_scan"})
+            continue
+
+        # Manual pan angle
+        if cmd.lower().startswith("pan "):
+            try:
+                angle = int(cmd.split()[1])
+                execute_command({"type": "pan", "angle": angle})
+            except:
+                print("[ERROR] Invalid pan command")
+            continue
+
+        # Manual movement
+        parts = cmd.split()
+        if parts[0] in ["forward", "backward", "left", "right", "stop"]:
+            value = float(parts[1]) if len(parts) > 1 else 1
+            execute_command({"type": parts[0], "value": value})
+            continue
+
+        print("[ERROR] Unknown command")
+
+except KeyboardInterrupt:
+    print("\nInterrupted")
+
+finally:
+    tof.stop_ranging()
+    if sock:
+        sock.close()
+
+</user_query>
+
+assistant:
+On the Pi side the logic looks fine: it handles `{"type":"forward","value":1}` and forwards `"forward 1"` to the Pico.
+
+To narrow this down:
+
+**1. What appears on the Pi when you type `forward 1` in the Java console?**
+
+You should see lines like:
+
+```
+[AUTO] Received JSON: {'type': 'forward', 'value': 1}
+[AUTO] Movement: forward 1
+[PICO] Sent: forward 1
+```
+
+- If all three appear, the server → Pi → Pico chain is working and the issue is likely in the Pico (how it interprets `"forward 1"`).
+- If none appear, the Pi never receives the command from the server.
+- If you see `Received JSON` but not `[PICO] Sent`, something fails in `execute_command` before `send_command`.
+
+**2. Does `forward 1` work when you type it directly in the Pi’s own CLI?**
+
+- If it works from the Pi CLI but not from the Java server, the problem is the TCP path or when the server sends.
+- If it fails from both, the problem is Pi → Pico or the Pico firmware.
+
+**3. Timing**
+
+`pan_scan` takes several seconds and blocks the receive thread while it runs. If you send `forward 1` right before or during a `pan_scan`, it might be delayed but should still be processed once the scan finishes.
+
+Reporting what you see in cases 1 and 2 will show whether the bug is in Java → Pi or Pi → Pico.
+
+user:
+<user_query>
+
+Only pan_scan works...[OK] VL53L1X started
+[OK] Connected to server 192.168.0.142:5000
+
+Minion I2C Control + ToF + Telemetry
+------------------------------------
+Commands: forward 2 | backward 1 | left 0.5 | right 1 | stop | pan <angle> | pan scan
+Type 'exit' to quit
+
+Command: [AUTO] Received JSON: {'type': 'pan_scan'}
+[AUTO] Starting pan scan
+[PICO] Sent: pan 40
+[SCAN] pan=40 | dist=22.4
+[PICO] Sent: pan 44
+[SCAN] pan=44 | dist=19.8
+[PICO] Sent: pan 48
+[SCAN] pan=48 | dist=19.0
+[PICO] Sent: pan 52
+[SCAN] pan=52 | dist=18.9
+[PICO] Sent: pan 56
+[SCAN] pan=56 | dist=19.1
+[PICO] Sent: pan 60
+[SCAN] pan=60 | dist=19.2
+[PICO] Sent: pan 64
+[SCAN] pan=64 | dist=19.4
+[PICO] Sent: pan 68
+[SCAN] pan=68 | dist=19.5
+[PICO] Sent: pan 72
+[SCAN] pan=72 | dist=19.7
+[PICO] Sent: pan 76
+[SCAN] pan=76 | dist=19.9
+[PICO] Sent: pan 80
+[SCAN] pan=80 | dist=20.2
+[PICO] Sent: pan 84
+[SCAN] pan=84 | dist=20.0
+[PICO] Sent: pan 88
+[SCAN] pan=88 | dist=20.2
+[PICO] Sent: pan 92
+[SCAN] pan=92 | dist=20.2
+[PICO] Sent: pan 96
+[SCAN] pan=96 | dist=20.2
+[PICO] Sent: pan 100
+[SCAN] pan=100 | dist=20.1
+[PICO] Sent: pan 104
+[SCAN] pan=104 | dist=20.2
+[PICO] Sent: pan 108
+[SCAN] pan=108 | dist=20.2
+[PICO] Sent: pan 112
+[SCAN] pan=112 | dist=20.2
+[PICO] Sent: pan 116
+[SCAN] pan=116 | dist=21.0
+[PICO] Sent: pan 120
+[SCAN] pan=120 | dist=21.8
+[PICO] Sent: pan 124
+[SCAN] pan=124 | dist=22.8
+[PICO] Sent: pan 128
+[SCAN] pan=128 | dist=24.0
+[PICO] Sent: pan 132
+[SCAN] pan=132 | dist=25.0
+[PICO] Sent: pan 136
+[SCAN] pan=136 | dist=26.2
+[PICO] Sent: pan 140
+[SCAN] pan=140 | dist=27.8
+[PICO] Sent: pan 90
+[SCAN] complete | returned to 90
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105932829}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105932829}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105933000}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105933000}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105933170}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105933170}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105933341}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105933341}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105933511}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105933511}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105933682}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105933682}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105933854}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105933854}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105934023}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105934023}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105934193}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105934193}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105934364}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105934364}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105934536}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105934536}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105934706}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105934706}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105934875}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105934875}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105935045}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105935045}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105935221}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105935221}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105935389}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105935389}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105935562}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105935562}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105935735}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105935735}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105935907}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105935907}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105936081}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105936081}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105936256}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105936256}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105936426}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105936426}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105936600}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105936600}
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105936770}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105936770}
+[ERROR] Parsing server command: Unterminated string starting at: line 1 column 15 (char 14)
+[ERROR] Parsing server command: Expecting value: line 1 column 1 (char 0)
+[AUTO] Received JSON: {'type': 'ack', 'timestamp': 1771105937116}
+[AUTO] Unknown command: {'type': 'ack', 'timestamp': 1771105937116}
+[AUTO] Received JSON: {'type': 'forward_1'}
+[AUTO] Unknown command: {'type': 'forward_1'}
+[AUTO] Received JSON: {'type': 'right 1'}
+[AUTO] Unknown command: {'type': 'right 1'}
+[AUTO] Received JSON: {'type': 'forward 1'}
+[AUTO] Unknown command: {'type': 'forward 1'}
+
+</user_query>
+
+assistant:
+Identifying the cause:
+
+```
+[AUTO] Received JSON: {'type': 'forward_1'}
+[AUTO] Received JSON: {'type': 'right 1'}
+[AUTO] Received JSON: {'type': 'forward 1'}
+```
+
+The server is sending the entire line as `type` (e.g. `"forward 1"`) instead of splitting into `type` and `value`. That indicates ReconServer is running, not Networking.
+
+ReconServer uses:
+```java
+String jsonCommand = "{\"type\":\"" + line + "\"}";
+```
+So "forward 1" becomes `{"type":"forward 1"}`, which the Pi doesn't recognize.
+
+Networking parses and emits `{"type":"forward","value":1}`. Switching ReconServer to use Networking's JSON logic.
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  limit: 75
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\build.gradle
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+Updating ReconServer to use Networking's command parsing (it currently sends the whole line as `type`):
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                         if (line.equalsIgnoreCase("exit")) break;
+
+                        String jsonCommand = "{\"type\":\"" + line + "\"}";
+
+                        for (String ip : connectedMinions.keySet()) {
+  new_string:                         if (line.equalsIgnoreCase("exit")) break;
+
+                        // Match pi_send.py: pan_scan, pan <angle>, forward/backward/left/right/stop <value>
+                        String jsonCommand;
+                        if (line.equalsIgnoreCase("pan scan")) {
+                            jsonCommand = "{\"type\":\"pan_scan\"}";
+                        } else if (line.startsWith("pan ")) {
+                            String angleStr = line.substring(4).trim();
+                            jsonCommand = "{\"type\":\"pan\",\"angle\":" + angleStr + "}";
+                        } else {
+                            String[] parts = line.split(" ");
+                            if (parts.length == 2) {
+                                jsonCommand = "{\"type\":\"" + parts[0] + "\",\"value\":" + parts[1] + "}";
+                            } else {
+                                jsonCommand = "{\"type\":\"" + line + "\"}";
+                            }
+                        }
+
+                        for (String ip : connectedMinions.keySet()) {
+
+[Tool result] StrReplace
+
+assistant:
+Removing ACK from ReconServer; it's causing "Unknown command" spam.
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  offset: 125
+  limit: 60
+
+[Tool result] Read
+
+assistant:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                         }
+                    }
+
+                    // ACK
+                    out.println("{\"type\":\"ack\",\"timestamp\":" + timestamp + "}");
+                }
+  new_string:                         }
+                    }
+                    // No ACK — Pi treats {"type":"ack"} as Unknown command
+                }
+
+[Tool result] StrReplace
+
+assistant:
+[Tool call] Shell
+  command: cd c:\Users\rahul\ISEF_2026_ROBO; .\gradlew :SCOUT-LC:compileJava --quiet 2>&1
+  description: Verify ReconServer compiles
+
+[Tool result] Shell
+
+assistant:
+You were running **ReconServer** (you can see it from the output), which was sending the whole line as `type`:
+- `"forward 1"` → `{"type":"forward 1"}` (incorrect)
+- `"right 1"` → `{"type":"right 1"}` (incorrect)
+
+instead of:
+- `{"type":"forward","value":1}`
+- `{"type":"right","value":1}`
+
+**Changes made in ReconServer:**
+
+1. **JSON command parsing** – ReconServer now uses the same parsing as Networking:
+   - `pan scan` → `{"type":"pan_scan"}`
+   - `pan 45` → `{"type":"pan","angle":45}`
+   - `forward 1` → `{"type":"forward","value":1}`
+   - `stop` → `{"type":"stop"}`
+
+2. **ACK removed** – The server no longer sends ACKs, so the Pi will stop logging "Unknown command" for those.
+
+Restart ReconServer and try `forward 1` again; it should work.
+
+user:
+<user_query>
+It works now! But instead of just running Recon_Server, when I run the entier project on gradle --> application --> run, it begins to spam like crazy "ennter command"
+</user_query>
+
+assistant:
+Suspecting stdin isn't attached when running the whole project, so `readLine()` returns null and the loop keeps printing "Enter command". Checking and fixing the console loop in both servers:
+[Tool call] Grep
+  pattern: readLine|Enter command
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java
+  -B: 0
+  -A: 1
+
+[Tool result] Grep
+
+assistant:
+Fixing both files: when stdin is disconnected `readLine()` returns null and the code does `continue`, causing an infinite prompt loop. Exiting the console thread on null (break) instead of continuing.
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) continue;
+                        line = line.trim();
+                        if (line.equalsIgnoreCase("exit")) break;
+  new_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) break; // EOF / no console — stop prompting
+                        line = line.trim();
+                        if (line.equalsIgnoreCase("exit")) break;
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) continue;
+                        line = line.trim();
+                        if (line.equalsIgnoreCase("exit")) {
+  new_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) break; // EOF / no console — stop prompting
+                        line = line.trim();
+                        if (line.equalsIgnoreCase("exit")) {
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+assistant:
+Summary of what was going on and what was changed:
+
+**Cause:** When you run the “entire project,” the process sometimes has no real console, so `System.in` is effectively at EOF. `reader.readLine()` then keeps returning `null`. The code did `if (line == null) continue;`, so it looped forever and printed "Enter command" every time.
+
+**Change:** In both **ReconServer** and **Networking**, `if (line == null) continue;` was replaced with `if (line == null) break;`. So when stdin is gone (null/EOF), the console thread exits instead of looping. The server keeps running and accepting connections; it just stops asking for input.
+
+**What you should do:** Run the app via **Gradle → SCOUT-LC → application → run** (or the “Run” that starts the main class) so it gets a real console. Avoid a generic “run whole project” that might start multiple things or run without a console. After the change, if there’s still no console you’ll get one “Enter command” and then the thread will exit instead of spamming.
+
+user:
+<user_query>
+
+Ok but now even though Im not getting spammed I dont have the option to type in commands...
+</user_query>
+
+assistant:
+Changing to `break` on null causes the console thread to exit immediately when stdin isn't attached. Throttling retries: sleep 1s when `readLine()` returns null, then retry, to stop the spam while keeping the thread alive for when the console attaches:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) break; // EOF / no console — stop prompting
+  new_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) {
+                            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                            continue; // No console yet — wait and retry
+                        }
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) break; // EOF / no console — stop prompting
+  new_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) {
+                            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                            continue; // No console yet — wait and retry
+                        }
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+assistant:
+Switched back to `continue` and added a 1-second delay when `readLine()` returns null so it:
+- Stays responsive instead of exiting
+- Only retries once per second, so no spam
+
+The root cause may be that the Gradle/IDE run config is not using an interactive console, so stdin stays disconnected.
+
+**Try this:** Run from a real terminal:
+
+```powershell
+cd c:\Users\rahul\ISEF_2026_ROBO
+.\gradlew :SCOUT-LC:run
+```
+
+In that setup, stdin is usually wired correctly and you can type commands. If you run via the IDE’s Gradle panel instead, check whether:
+- The run config has “Run in terminal” or similar
+- You’re focusing the correct output/terminal pane where the app is running
+
+What do you use to run the app right now (IDE button vs terminal, and which IDE)?
+
+user:
+<user_query>
+
+Dude ur breaking it even more... a new enter command pops up every second...
+</user_query>
+
+assistant:
+Reverting to the original `continue` — removing the sleep and break.
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) {
+                            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                            continue; // No console yet — wait and retry
+                        }
+  new_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) continue;
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) {
+                            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                            continue; // No console yet — wait and retry
+                        }
+  new_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) continue;
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+assistant:
+Reverted to the original behavior in both files.
+
+Use **Gradle → SCOUT-LC → application → run** (or `.\gradlew :SCOUT-LC:run` in a terminal). That uses a proper console, `readLine()` blocks waiting for input, and you get no spam.
+
+Avoid **“Run entire project”**; that run config doesn’t attach stdin and causes the spam.
+
+user:
+<user_query>
+
+Now im back to spam...why is that? It doesnt let me type and it spams enter command...
+</user_query>
+
+assistant:
+Investigating why stdin isn't reaching the app. Checking the Gradle setup — the run task may not be forwarding stdin.
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\build.gradle
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\settings.gradle
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+Fixing Gradle so it forwards stdin to the Java process:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\build.gradle
+  old_string: application {
+    // Set this to whichever main class you want to run
+    // e.g., Networking or ReconServer
+    mainClass = 'Networking' 
+}
+
+java {
+  new_string: application {
+    // Set this to whichever main class you want to run
+    // e.g., Networking or ReconServer
+    mainClass = 'Networking' 
+}
+
+run {
+    standardInput = System.in  // Forward stdin so "Enter command" works in terminal/IDE
+}
+
+java {
+
+[Tool result] StrReplace
+
+assistant:
+Added `standardInput = System.in` so the run task passes stdin to the Java process.
+
+Run it from a **real terminal** (PowerShell or CMD):
+
+```powershell
+cd c:\Users\rahul\ISEF_2026_ROBO
+.\gradlew :SCOUT-LC:run
+```
+
+Then you should be able to type commands. If you use the IDE Gradle panel and it still runs without a proper console, stdin can still be disconnected; in that case, use the terminal instead.
+
+user:
+<user_query>
+
+Dude no i HAVE to do the gradle application run
+</user_query>
+
+assistant:
+You can still use the Gradle application run task—the important part is **where** it runs:
+
+1. **In the IDE terminal** – Open the integrated terminal in Cursor (``Ctrl+` `` or Terminal → New Terminal), then run:
+   ```powershell
+   .\gradlew :SCOUT-LC:run
+   ```
+   That runs the same `run` task as the Gradle panel, but with a proper terminal and stdin.
+
+2. **From the Gradle panel** – If you click **application → run** in the Gradle view, it often runs in an output pane without input, so stdin isn’t attached and you get the spam.
+
+**Check this:** When you click run in the Gradle panel, does it use a **Terminal** tab or an **Output** tab? Input only works in a terminal.
+
+If you must use the Gradle panel button, look in Cursor/VS Code for Gradle settings such as “Run in terminal” or “Run build in terminal” and enable that. That makes the run task execute in a real terminal so stdin works.
+
+user:
+<user_query>
+
+Dude I STILL GETTING SPAMMED
+</user_query>
+
+assistant:
+Exiting the console thread when stdin returns null — readLine() returns null because stdin isn't attached, so we can't get input; exiting stops the spam.
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) continue;
+  new_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) break; // No stdin — exit thread, stop spam
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) continue;
+  new_string:                         System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) break; // No stdin — exit thread, stop spam
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+assistant:
+Update: on `null` from `readLine()`, the thread now exits instead of looping, so the spam stops.
+
+**To actually type commands:** Run it from Cursor’s integrated terminal (Terminal → New Terminal) with:
+```
+.\gradlew :SCOUT-LC:run
+```
+
+When you start it from the Gradle panel, there’s no stdin attached, so the console thread exits right away and you can’t type—but it will no longer spam. Using the terminal gives you stdin and lets you enter commands.
+
+user:
+<user_query>
+
+Ok so now that It doesnt spam...how to type? It doesn't let me...
+</user_query>
+
+assistant:
+You can’t type right now because the app is running in a place where there’s no real console, so stdin is disconnected and the console thread exits.
+
+To type commands, run it from a terminal that provides stdin:
+
+1. In Cursor, press **Ctrl+`** (or View → Terminal) to open the integrated terminal.
+2. In that terminal, run:
+   ```powershell
+   cd c:\Users\rahul\ISEF_2026_ROBO
+   .\gradlew :SCOUT-LC:run
+   ```
+3. Wait until you see `Enter command: `.
+4. Type your commands there (e.g. `forward 1`, `pan scan`).
+
+That’s the same Gradle run task as the Gradle panel, but run in a terminal so stdin works and you can type.
+
+user:
+<user_query>
+
+Dude cant it just ask me for the command like once and wait for my answer? Then it can still run but also have a manual fallback?
+</user_query>
+
+assistant:
+That behavior is already what the code does when stdin is connected: it prints `Enter command: ` once, waits for input (readLine blocks), processes your command, then asks again.
+
+The problem is that when you start it from the Gradle panel, the process gets no stdin, so `readLine()` returns `null` right away and the loop exits instead of waiting.
+
+To get the behavior you want:
+
+1. Press **Ctrl+`** to open the integrated terminal.
+2. Run:  
+   `.\gradlew :SCOUT-LC:run`
+3. When you see `Enter command: `, type your command and press Enter.
+
+You’ll get one prompt, then it will wait for your input before processing and prompting again.
+
+The server still runs in the background and accepts Pi connections; the console is a manual fallback. You just need to start the app from a terminal so it gets stdin.
+
+user:
+<user_query>
+
+DUDE THAT DOESNT WORK
+
+</user_query>
+
+user:
+<user_query>
+
+Ur so useless
+</user_query>
+
+assistant:
+Adding a TCP command port: connect to send commands instead of stdin. Telnet or netcat will work regardless of how we run the app:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+Adding a TCP command port (5001). Connect with telnet to send commands — no stdin required:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:     private static final int PORT = 5000; // Port minions connect to
+    private static final int MAX_CLIENTS = 10; // Max minions
+  new_string:     private static final int PORT = 5000; // Port minions connect to
+    private static final int COMMAND_PORT = 5001; // Telnet here to send commands (no stdin needed)
+    private static final int MAX_CLIENTS = 10; // Max minions
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:         System.out.println("[ReconServer] Networking module starting...");
+        System.out.println("[ReconServer] Listening on port " + PORT + " ...");
+
+        try {
+            InetAddress bindAddr = InetAddress.getByName("192.168.0.142");
+            ServerSocket serverSocket = new ServerSocket(PORT, 50, bindAddr);
+
+            // --- CONSOLE INPUT THREAD ---
+            Thread consoleInputThread = new Thread(() -> {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+                try {
+                    while (true) {
+                        System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) break; // No stdin — exit thread, stop spam
+                        line = line.trim();
+                        if (line.equalsIgnoreCase("exit")) {
+                            System.out.println("[INFO] Exiting console input.");
+                            break;
+                        }
+
+                        // Convert to JSON
+                        String jsonCommand;
+                        if (line.equalsIgnoreCase("pan scan")) {
+                            jsonCommand = "{\"type\":\"pan_scan\"}";
+                        } else if (line.startsWith("pan ")) {
+                            String angleStr = line.substring(4).trim();
+                            jsonCommand = "{\"type\":\"pan\",\"angle\":" + angleStr + "}";
+                        } else {
+                            String[] parts = line.split(" ");
+                            if (parts.length == 2) {
+                                jsonCommand = "{\"type\":\"" + parts[0] + "\",\"value\":" + parts[1] + "}";
+                            } else {
+                                jsonCommand = "{\"type\":\"" + line + "\"}";
+                            }
+                        }
+
+                        // Send to all minions
+                        for (String minionIP : connectedMinions.keySet()) {
+                            sendCommandToMinion(minionIP, jsonCommand);
+                        }
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            });
+            consoleInputThread.setDaemon(true);
+            consoleInputThread.start();
+
+            // --- MAIN SERVER LOOP ---
+  new_string:         System.out.println("[ReconServer] Networking module starting...");
+        System.out.println("[ReconServer] Minions on port " + PORT + ", commands on port " + COMMAND_PORT);
+        System.out.println("[ReconServer] Send commands: telnet localhost " + COMMAND_PORT);
+
+        try {
+            InetAddress bindAddr = InetAddress.getByName("192.168.0.142");
+            ServerSocket serverSocket = new ServerSocket(PORT, 50, bindAddr);
+            ServerSocket commandSocket = new ServerSocket(COMMAND_PORT, 10);
+
+            // --- TCP COMMAND LISTENER (no stdin needed) ---
+            Thread commandThread = new Thread(() -> {
+                try {
+                    while (true) {
+                        Socket client = commandSocket.accept();
+                        Thread.handle(client, null);
+                        new Thread(() -> handleCommandClient(client)).start();
+                    }
+                } catch (IOException e) {
+                    if (!commandSocket.isClosed()) e.printStackTrace();
+                }
+            });
+            commandThread.setDaemon(true);
+            commandThread.start();
+
+            // --- MAIN SERVER LOOP ---
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+assistant:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:                     while (true) {
+                        Socket client = commandSocket.accept();
+                        Thread.handle(client, null);
+                        new Thread(() -> handleCommandClient(client)).start();
+                    }
+  new_string:                     while (true) {
+                        Socket client = commandSocket.accept();
+                        new Thread(() -> handleCommandClient(client)).start();
+                    }
+
+[Tool result] StrReplace
+
+assistant:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:     public static void sendCommandToMinion(String minionIP, String command) {
+  new_string:     private static void handleCommandClient(Socket client) {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
+             PrintWriter out = new PrintWriter(client.getOutputStream(), true)) {
+            out.println("Connected. Type commands (forward 1, pan scan, stop, etc). Type 'exit' to disconnect.");
+            String line;
+            while ((line = in.readLine()) != null) {
+                line = line.trim();
+                if (line.equalsIgnoreCase("exit")) break;
+                if (line.isEmpty()) continue;
+
+                String jsonCommand;
+                if (line.equalsIgnoreCase("pan scan")) {
+                    jsonCommand = "{\"type\":\"pan_scan\"}";
+                } else if (line.startsWith("pan ")) {
+                    String angleStr = line.substring(4).trim();
+                    jsonCommand = "{\"type\":\"pan\",\"angle\":" + angleStr + "}";
+                } else {
+                    String[] parts = line.split(" ");
+                    if (parts.length == 2) {
+                        jsonCommand = "{\"type\":\"" + parts[0] + "\",\"value\":" + parts[1] + "}";
+                    } else {
+                        jsonCommand = "{\"type\":\"" + line + "\"}";
+                    }
+                }
+                for (String minionIP : connectedMinions.keySet()) {
+                    sendCommandToMinion(minionIP, jsonCommand);
+                }
+                out.println("OK");
+            }
+        } catch (IOException ignored) {}
+        finally {
+            try { client.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    public static void sendCommandToMinion(String minionIP, String command) {
+
+[Tool result] StrReplace
+
+assistant:
+Applying the same changes to ReconServer:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:     private static final int PORT = 5000;
+    private static final int MAX_CLIENTS = 10;
+  new_string:     private static final int PORT = 5000;
+    private static final int COMMAND_PORT = 5001; // Telnet here to send commands (no stdin needed)
+    private static final int MAX_CLIENTS = 10;
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:         System.out.println("[ReconServer] Networking module starting...");
+        System.out.println("[ReconServer] Listening on port " + PORT + "...");
+
+        try {
+            ServerSocket serverSocket = new ServerSocket(PORT);
+
+            // Console input thread
+            Thread consoleThread = new Thread(() -> {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+                try {
+                    while (true) {
+                        System.out.print("Enter command: ");
+                        String line = reader.readLine();
+                        if (line == null) break; // No stdin — exit thread, stop spam
+                        line = line.trim();
+                        if (line.equalsIgnoreCase("exit")) break;
+
+                        // Match pi_send.py: pan_scan, pan <angle>, forward/backward/left/right/stop <value>
+                        String jsonCommand;
+                        if (line.equalsIgnoreCase("pan scan")) {
+                            jsonCommand = "{\"type\":\"pan_scan\"}";
+                        } else if (line.startsWith("pan ")) {
+                            String angleStr = line.substring(4).trim();
+                            jsonCommand = "{\"type\":\"pan\",\"angle\":" + angleStr + "}";
+                        } else {
+                            String[] parts = line.split(" ");
+                            if (parts.length == 2) {
+                                jsonCommand = "{\"type\":\"" + parts[0] + "\",\"value\":" + parts[1] + "}";
+                            } else {
+                                jsonCommand = "{\"type\":\"" + line + "\"}";
+                            }
+                        }
+
+                        for (String ip : connectedMinions.keySet()) {
+                            connectedMinions.get(ip).queueCommand(jsonCommand);
+                        }
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            });
+            consoleThread.setDaemon(true);
+            consoleThread.start();
+
+            // Main server loop
+  new_string:         System.out.println("[ReconServer] Networking module starting...");
+        System.out.println("[ReconServer] Minions on port " + PORT + ", commands on port " + COMMAND_PORT);
+        System.out.println("[ReconServer] Send commands: telnet localhost " + COMMAND_PORT);
+
+        try {
+            ServerSocket serverSocket = new ServerSocket(PORT);
+            ServerSocket commandSocket = new ServerSocket(COMMAND_PORT, 10);
+
+            // TCP command listener (no stdin needed)
+            Thread commandThread = new Thread(() -> {
+                try {
+                    while (true) {
+                        Socket client = commandSocket.accept();
+                        new Thread(() -> handleCommandClient(client)).start();
+                    }
+                } catch (IOException e) {
+                    if (!commandSocket.isClosed()) e.printStackTrace();
+                }
+            });
+            commandThread.setDaemon(true);
+            commandThread.start();
+
+            // Main server loop
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:     // ---------------------
+    // SEND COMMAND TO MINION
+    // ---------------------
+    public static void sendCommandToMinion(String minionIP, String command) {
+  new_string:     private static void handleCommandClient(Socket client) {
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
+             PrintWriter out = new PrintWriter(client.getOutputStream(), true)) {
+            out.println("Connected. Type commands (forward 1, pan scan, stop, etc). Type 'exit' to disconnect.");
+            String line;
+            while ((line = in.readLine()) != null) {
+                line = line.trim();
+                if (line.equalsIgnoreCase("exit")) break;
+                if (line.isEmpty()) continue;
+
+                String jsonCommand;
+                if (line.equalsIgnoreCase("pan scan")) {
+                    jsonCommand = "{\"type\":\"pan_scan\"}";
+                } else if (line.startsWith("pan ")) {
+                    String angleStr = line.substring(4).trim();
+                    jsonCommand = "{\"type\":\"pan\",\"angle\":" + angleStr + "}";
+                } else {
+                    String[] parts = line.split(" ");
+                    if (parts.length == 2) {
+                        jsonCommand = "{\"type\":\"" + parts[0] + "\",\"value\":" + parts[1] + "}";
+                    } else {
+                        jsonCommand = "{\"type\":\"" + line + "\"}";
+                    }
+                }
+                for (String ip : connectedMinions.keySet()) {
+                    connectedMinions.get(ip).queueCommand(jsonCommand);
+                }
+                out.println("OK");
+            }
+        } catch (IOException ignored) {}
+        finally {
+            try { client.close(); } catch (IOException ignored) {}
+        }
+    }
+
+    // ---------------------
+    // SEND COMMAND TO MINION
+    // ---------------------
+    public static void sendCommandToMinion(String minionIP, String command) {
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+user:
+<user_query>
+
+Alright dude so I made some changes in VS Code but over here it seems it hasnt updated for u
+</user_query>
+
+assistant:
+Reading the current files to pick up your changes:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+Seeing your updates. Networking.java: `commandSocket` is referenced but not declared. Fixing it.
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  old_string:             InetAddress bindAddr = InetAddress.getByName("192.168.0.142");
+            ServerSocket serverSocket = new ServerSocket(PORT, 50, bindAddr);
+
+            // --- TCP COMMAND LISTENER (no stdin needed) ---
+  new_string:             InetAddress bindAddr = InetAddress.getByName("192.168.0.142");
+            ServerSocket serverSocket = new ServerSocket(PORT, 50, bindAddr);
+            ServerSocket commandSocket = new ServerSocket(COMMAND_PORT, 10);
+
+            // --- TCP COMMAND LISTENER (no stdin needed) ---
+
+[Tool result] StrReplace
+
+assistant:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+  limit: 80
+
+[Tool result] Read
+
+assistant:
+Re-reading the files, the current state is:
+
+- **Networking.java** – Uses the console input thread again (with `break` on null), no TCP command port.
+- **ReconServer.java** – Uses autonomous mode: it queues `pan_scan` on connect, and on SCAN telemetry it uses `planner.getSafestMove()` and queues that move plus another `pan_scan`.
+
+I’m aligned with what’s on disk now. Do you want me to reintroduce the TCP command port (port 5001) so you can send commands via telnet without relying on stdin?
+
+user:
+<user_query>
+
+NOPE, NO NON ONONOONONONONO. UNCLE NO.
+
+I have an important task for you: Currently I'm facing trouble with getting the atonomous navigation to work...its gruelsome currently. After the first "pan scan" is sent (DO NOT TOUCH IT), it just...doesnt move. I want it to que a physical movement but it doesnt move IRL (The pi is connected and so is the pico, dont worry about that)
+
+Before we do anything, I want to hear your opinion
+</user_query>
+
+assistant:
+Here’s what I see:
+
+**Likely cause: Pi telemetry format vs what ReconServer expects**
+
+1. Pi sends JSON, e.g.:
+   ```text
+   {"type":"pan_scan","pan":40,"distance":22.4}
+   ```
+
+2. ReconServer only handles plain-text SCAN:
+   ```java
+   if (message.startsWith("SCAN")) {
+       // planner.updateFromScan(), getSafestMove(), queue movement...
+   }
+   ```
+
+3. JSON doesn’t start with `"SCAN"`, so that block never runs. ReconServer never:
+   - feeds scan data into the planner
+   - calls `getSafestMove()`
+   - queues a movement command
+
+So the autonomy logic never runs because it’s waiting for a format the Pi never sends.
+
+**Fix direction:** ReconServer needs to also handle the Pi’s JSON telemetry. When it sees `{"type":"pan_scan","pan":...,"distance":...}`, it should:
+- Convert that into whatever `planner.updateFromScan()` expects, and
+- Then run the same autonomy logic (get move, queue it, queue next `pan_scan`).
+
+I can inspect ReconServer and SwarmPlanner next and show exactly how to plug the Pi’s JSON into the planner.
+
+user:
+<user_query>
+
+I updated my code, can you refresh so you can see the changes? We have different problems now.
+</user_query>
+
+assistant:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\SwarmPlanner.java
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+
+[Tool result] Read
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+I’ve gone through the updated files. Here’s what stands out:
+
+**ReconServer.java**
+- Parses Pi JSON telemetry with `new Gson().fromJson(...)` – but there’s no `import com.google.gson.Gson;`
+- Handles `pan_scan` JSON, converts to `Point3D`, updates planner, queues move + next `pan_scan`
+
+**SwarmPlanner.java**
+- `getSafestMove()` returns `"forward 1"`, `"left 1"`, etc. (direction + `" 1"`)
+
+**Bug**
+ReconServer builds the JSON like this:
+```java
+queueCommand("{\"type\":\"" + safeMove + "\",\"value\":" + moveValue + "}");
+```
+With `safeMove = "forward 1"`, it sends `{"type":"forward 1","value":1}`. The Pi expects `{"type":"forward","value":1}` and doesn’t handle `"forward 1"` as a valid type.
+
+So `getSafestMove` should return `"forward"` (or `"left"`, etc.), not `"forward 1"`, and the server should keep `value` as a separate field.
+
+What problems are you seeing now?
+
+user:
+<user_query>
+
+Wait. This problem came up before and we ended up ignoring it. Gson cannot be resolved to a type
+</user_query>
+
+assistant:
+Adding the missing import:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  limit: 15
+
+[Tool result] Read
+
+assistant:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string: import java.io.*;
+import java.net.*;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+  new_string: import java.io.*;
+import java.net.*;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import com.google.gson.Gson;
+
+[Tool result] StrReplace
+
+assistant:
+Added `import com.google.gson.Gson;` to ReconServer. Gson is already in your `build.gradle`, so the type should resolve now. If it still fails, say what error you see.
+
+user:
+<user_query>
+
+Hey dude, I made some changes YET AGAIN
+
+Can you refresh and review them? Also I'm facing some trouble with the hardware going the way its supposed to...I suspect smth in the code may be off too.
+</user_query>
+
+assistant:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\SwarmPlanner.java
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\Networking.java
+
+[Tool result] Read
+
+[Tool result] Read
+
+[Tool result] Read
+
+assistant:
+Here’s what stands out from the updated code:
+
+---
+
+## Review summary
+
+### Changes
+
+1. **`isBusy` flag** – Avoids overlapping scan/move processing.
+2. **`getSafestMove` handling** – You correctly strip the extra `" 1"` before sending:
+   `if (safeMove.contains(" ")) safeMove = safeMove.split(" ")[0];`
+
+### Possible issues (hardware / behavior)
+
+**1. Reacting on the first `pan_scan` message**
+
+The Pi sends one JSON message per angle (e.g. 40, 44, 48… 140). You handle the first one, skip the rest because `isBusy` is true, then queue a move and the next `pan_scan`. That means:
+
+- Only one point (first angle, first distance) is used for planning.
+- The planner never sees the full sweep.
+- You could be reacting before the robot finishes the scan.
+
+You might want to wait until the full sweep is done before choosing and queuing a move (e.g. wait for a “scan complete” signal, or process only the last point / aggregate all points from one sweep).
+
+**2. 300 ms delay**
+
+`Thread.sleep(300)` before the next `pan_scan` might be too short. A single move (e.g. 1 second) may take longer than 300 ms. If the next `pan_scan` is sent before the move finishes, commands can overlap or the robot may scan while still moving.
+
+**3. `getSafestMove` ignores scan data**
+
+`getSafestMove` currently always returns `"forward"` (or the max of fixed values). It never looks at `dynamicMap` or scan data, so it’s not actually using the ToF results for obstacle avoidance. That explains behavior not matching the environment.
+
+---
+
+### Suggested directions
+
+1. Either:
+   - Wait for a clear “scan complete” message from the Pi before deciding and queuing a move, or  
+   - Aggregate all `pan_scan` points from a single sweep, then decide once.
+2. Increase the delay before the next `pan_scan` (or make it depend on move duration) so the move can finish.
+3. Change `getSafestMove` so it uses `dynamicMap` and scan data (e.g. pick the direction with the most free space / lowest hazard).
+
+If you describe how the robot behaves right now (e.g. doesn’t move, moves into walls, spins, etc.), I can propose concrete code changes for these points.
+
+user:
+<user_query>
+
+Ok so it worked nicely the first rotation (pan scan, then move forward 1 second), but then it stopped moving altogether...like the servo didnt move at all and just kinda stood there while the VL sensor kept spamming the same place and the wheels didnt move either even though it said the command was sent in the server terminal...is there some sort of limiter in the code that prevents it from going a second round? 
+</user_query>
+
+assistant:
+Checking the flow:
+[Tool call] Read
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  offset: 115
+  limit: 95
+
+[Tool result] Read
+
+assistant:
+Tracing the flow:
+
+- The Pi sends ~26 pan_scan telemetry messages per sweep (one per angle).
+- We process the first message, set `isBusy = true`, and spawn a thread that sleeps 300ms then sets `isBusy = false`.
+- 300ms is much shorter than the sweep (~4s), so `isBusy` becomes false while the Pi is still scanning.
+- We process more telemetry, over-queueing moves and pan_scans.
+- Commands pile up; Pi may get stuck or overwhelmed.
+
+Fix: Only process the last telemetry of a sweep (e.g. pan >= 135) before queuing the next move/scan.
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                         if ("pan_scan".equals(type)) {
+                            if (isBusy) continue; // skip if already processing
+                            isBusy = true; // lock
+
+                            // --- Update map with current scan ---
+                            List<SwarmPlanner.Point3D> points = new ArrayList<>();
+                            double pan = ((Number) telemetry.get("pan")).doubleValue();
+                            double distance = ((Number) telemetry.get("distance")).doubleValue();
+                            points.add(new SwarmPlanner.Point3D((int) pan, (int) distance, 0, 0));
+                            planner.updateFromScan(points);
+  new_string:                         if ("pan_scan".equals(type)) {
+                            if (isBusy) continue; // skip if already processing
+
+                            double pan = ((Number) telemetry.get("pan")).doubleValue();
+                            double distance = ((Number) telemetry.get("distance")).doubleValue();
+
+                            // Only react when sweep is DONE (last angle ~140) — avoids over-queueing mid-sweep
+                            if (pan < 130) continue;
+
+                            isBusy = true; // lock
+
+                            // --- Update map with current scan ---
+                            List<SwarmPlanner.Point3D> points = new ArrayList<>();
+                            points.add(new SwarmPlanner.Point3D((int) pan, (int) distance, 0, 0));
+                            planner.updateFromScan(points);
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                             // --- Loop next scan after small delay ---
+                            new Thread(() -> {
+                                try {
+                                    Thread.sleep(300); // wait for move to finish
+                                    queueCommand("{\"type\":\"pan_scan\"}"); // queue next scan
+  new_string:                             // --- Loop next scan after move completes (1s move + margin) ---
+                            new Thread(() -> {
+                                try {
+                                    Thread.sleep(1500); // wait for move (1s) + servo settle
+                                    queueCommand("{\"type\":\"pan_scan\"}"); // queue next scan
+
+[Tool result] StrReplace
+
+[Tool result] StrReplace
+
+assistant:
+[Tool call] StrReplace
+  path: c:\Users\rahul\ISEF_2026_ROBO\SCOUT-LC\src\main\java\ReconServer.java
+  old_string:                             queueCommand("{\"type\":\"" + safeMove + "\",\"value\":" + moveValue + "}");
+                            new Thread(() -> {
+                                try {
+                                    Thread.sleep(300);
+                                    queueCommand("{\"type\":\"pan_scan\"}");
+  new_string:                             queueCommand("{\"type\":\"" + safeMove + "\",\"value\":" + moveValue + "}");
+                            new Thread(() -> {
+                                try {
+                                    Thread.sleep(1500);
+                                    queueCommand("{\"type\":\"pan_scan\"}");
+
+[Tool result] StrReplace
+
+assistant:
+Here’s what was changed:
+
+### 1. **React only when the sweep finishes** (`pan >= 130`)
+Before, every telemetry message (40, 44, 48… 140) was treated as a valid trigger. With `isBusy` resetting after 300 ms while the sweep took ~4 s, multiple messages were processed and the queue filled with many move/pan_scan commands.
+
+Now the server only reacts on the last angle(s) of the sweep (e.g. pan 130, 134, 138, 140), so it triggers once per physical scan instead of dozens of times.
+
+### 2. **Longer delay before the next pan_scan** (300 ms → 1500 ms)
+The move is 1 s long, so 300 ms wasn’t enough. The delay before queuing the next pan_scan is now 1.5 s so the move can finish and the system can settle before the next scan.
+
+Resulting flow:
+
+1. Pi finishes pan sweep (angles 40→140).
+2. Server gets telemetry for pan ≈ 130+.
+3. Server queues one move and one next pan_scan.
+4. Pi executes move, then pan_scan.
+5. After 1.5 s, the next pan_scan is queued.
+
+That should give a clean second (and further) rounds without over‑queueing.
+
+user:
+<user_query>
+
+Wait so very simply whats wrong with the code
+</user_query>
+
+assistant:
+**What was wrong:**
+
+1. **Reacting too early** – The Pi sends many telemetry messages during a pan scan (one per angle: 40, 44, 48 … 140). The server reacted to each of them, so it queued move + pan_scan many times instead of once per scan.
+
+2. **`isBusy` cleared too soon** – `isBusy` was cleared after 300 ms, but a full scan takes about 4 seconds. While the scan was still running, more telemetry arrived, `isBusy` was already false, and those messages were processed too, causing more over-queueing.
+
+3. **Delay too short** – The next pan_scan was scheduled after 300 ms, but a move lasts 1 second. The next scan could be sent before the move finished.
+
+**Fix:** Only react when the scan is nearly done (e.g. pan ≥ 130), and increase the delay before the next pan_scan to 1500 ms.

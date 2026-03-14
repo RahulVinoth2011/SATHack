@@ -1,0 +1,14 @@
+{
+  "socketPath": "\\\\.\\pipe\\mcp-0bd5b8e9-d8aa-46bf-89be-535134f75699.sock",
+  "scheme": "pipe",
+  "headers": {
+    "Authorization": "Nonce e0c95977-6488-4f9b-883a-de25119a5c21"
+  },
+  "pid": 29956,
+  "ideName": "Visual Studio Code",
+  "timestamp": 1773454229155,
+  "workspaceFolders": [
+    "c:\\Users\\rahul\\SATHack"
+  ],
+  "isTrusted": true
+}
