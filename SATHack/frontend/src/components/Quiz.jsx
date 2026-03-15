@@ -1,26 +1,44 @@
 import { useState, useEffect, useCallback } from 'react'
 
 const TYPE_LABELS = {
-  WORD_CHOICE: 'Word Choice',
-  TRANSITION: 'Transition',
-  MAIN_IDEA: 'Main Idea',
-  TEXT_STRUCTURE: 'Text Structure',
+  // New official CB names
+  WORDS_IN_CONTEXT: 'Words in Context',
+  TEXT_PURPOSE: 'Text Structure & Purpose',
+  TEXT_STRUCTURE: 'Text Structure & Purpose',
+  MAIN_IDEA: 'Central Ideas & Details',
+  DETAIL: 'Central Ideas & Details',
   COMMAND_OF_EVIDENCE: 'Command of Evidence',
-  LOGICAL_COMPLETION: 'Logical Completion',
-  STANDARD_ENGLISH: 'Standard English',
+  INFERENCES: 'Inferences',
   RHETORICAL_SYNTHESIS: 'Rhetorical Synthesis',
+  TRANSITIONS: 'Transitions',
+  BOUNDARIES: 'Boundaries',
+  FORM_STRUCTURE_SENSE: 'Form, Structure & Sense',
+  CROSS_TEXT_CONNECTIONS: 'Cross-Text Connections',
+  // Legacy names (fallback)
+  WORD_CHOICE: 'Words in Context',
+  TRANSITION: 'Transitions',
+  LOGICAL_COMPLETION: 'Inferences',
+  STANDARD_ENGLISH: 'Standard English',
   CROSS_TEXT: 'Cross-Text Connections',
 }
 
 const TYPE_COLORS = {
+  WORDS_IN_CONTEXT: 'bg-blue-100 text-blue-700',
   WORD_CHOICE: 'bg-blue-100 text-blue-700',
-  TRANSITION: 'bg-purple-100 text-purple-700',
-  MAIN_IDEA: 'bg-green-100 text-green-700',
+  TEXT_PURPOSE: 'bg-pink-100 text-pink-700',
   TEXT_STRUCTURE: 'bg-pink-100 text-pink-700',
+  MAIN_IDEA: 'bg-green-100 text-green-700',
+  DETAIL: 'bg-green-100 text-green-700',
   COMMAND_OF_EVIDENCE: 'bg-yellow-100 text-yellow-800',
+  INFERENCES: 'bg-orange-100 text-orange-700',
   LOGICAL_COMPLETION: 'bg-orange-100 text-orange-700',
-  STANDARD_ENGLISH: 'bg-teal-100 text-teal-700',
   RHETORICAL_SYNTHESIS: 'bg-indigo-100 text-indigo-700',
+  TRANSITIONS: 'bg-purple-100 text-purple-700',
+  TRANSITION: 'bg-purple-100 text-purple-700',
+  BOUNDARIES: 'bg-teal-100 text-teal-700',
+  FORM_STRUCTURE_SENSE: 'bg-teal-100 text-teal-700',
+  STANDARD_ENGLISH: 'bg-teal-100 text-teal-700',
+  CROSS_TEXT_CONNECTIONS: 'bg-rose-100 text-rose-700',
   CROSS_TEXT: 'bg-rose-100 text-rose-700',
 }
 

@@ -3,6 +3,7 @@ import { getRandomPassage, getPairedPassage } from '../passages.js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// ── NOTES SETS (for Rhetorical Synthesis questions) ──────────────────────────
 const notesSets = [
   {
     id: "notes_bees",
@@ -59,190 +60,380 @@ const notesSets = [
       "Biologist Edith Widder has argued that bioluminescence is the most common form of communication on Earth.",
     ],
   },
+  {
+    id: "notes_turnpike",
+    topic: "Early American Infrastructure",
+    notes: [
+      "The Philadelphia and Lancaster Turnpike was a road built between 1792 and 1794.",
+      "It was the first private turnpike in the United States.",
+      "It connected the cities of Philadelphia and Lancaster in the state of Pennsylvania.",
+      "It was sixty-two miles long.",
+      "The road was made of crushed stone and gravel, a technique known as macadamization.",
+    ],
+  },
+  {
+    id: "notes_solar_roasting",
+    topic: "Solar-Powered Chile Roasting",
+    notes: [
+      "Engineer Kenneth Armijo and his team roasted batches of green chiles using between 38 and 42 heliostats.",
+      "Heliostats are devices that concentrate sunlight to generate heat.",
+      "The team successfully reached the same roasting temperature used in traditional propane roasting.",
+      "However, propane roasting yielded faster results — propane batches took four minutes, while solar batches took six.",
+      "Armijo hypothesizes that using more heliostats could reduce the solar roasting time.",
+    ],
+  },
+  {
+    id: "notes_streaming",
+    topic: "Music Streaming and Live Performance",
+    notes: [
+      "Streaming services allow consumers to access large numbers of songs for a monthly fee.",
+      "The rise of streaming has reduced sales of full-length albums.",
+      "As a result, musicians are increasingly dependent on revenue from live performances.",
+      "Music festival appearances have become a more important part of musicians' careers.",
+      "Live music festival attendance has grown in part due to the 'experiential economy,' in which consumers find value in purchasing lived experiences.",
+    ],
+  },
 ];
 
-const SYSTEM_PROMPT = `You are an expert Digital SAT Reading and Writing question writer. Your questions must exactly match the style, structure, difficulty, and phrasing of official College Board Digital SAT questions.
+// ── MASTER SYSTEM PROMPT ─────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are an expert Digital SAT Reading and Writing question writer. Your questions must EXACTLY replicate the style, difficulty, phrasing, and trap-answer design of official College Board Digital SAT questions.
 
-Study these question type patterns carefully and replicate them exactly:
+The Digital SAT Reading & Writing section has 11 official question types. You will generate questions matching one of these types. Study the patterns, examples, and trap rules carefully.
 
-═══════════════════════════════════════════
-QUESTION TYPE 1: WORD_CHOICE
-═══════════════════════════════════════════
-Format: Short passage (1-3 sentences) with one key word replaced by [BLANK].
-Question stem (use EXACTLY): "Which choice completes the text with the most logical and precise word or phrase?"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 1 — WORDS IN CONTEXT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Official College Board name: "Words in Context"
+Format: 1–3 sentence passage with one key word replaced by [BLANK].
+Question stem (EXACT): "Which choice completes the text with the most logical and precise word or phrase?"
 
-Real SAT example:
-"NASA scientist Daniella DellaGiustina reports that despite facing the unexpected obstacle of a surface mostly covered in boulders, OSIRIS-REx successfully [BLANK] a sample of the surface, gathering pieces of it to bring back to Earth."
-A) attached  B) collected  C) followed  D) replaced
-Answer: B — "collected a sample" is the only phrase that is both precise and fits the action of gathering material.
+Real CB example:
+"The process of mechanically recycling plastics is often considered [BLANK] because of the environmental impact and the loss of material quality that often occurs."
+A) resilient  B) inadequate  C) dynamic  D) satisfactory
+Answer: B
+
+Strategy: Students should predict the word in their head, then match to the choices.
+
+TRAP RULES — must include all 4 trap types:
+- Extreme trap: a word that overstates or is too strong for the context
+- Opposite trap: a word with the opposite connotation of what's needed
+- "Sounds related" trap: a word in the same general field but wrong meaning
+- "Too broad" trap: a word that vaguely fits but isn't precise enough
 
 RULES:
 - All 4 choices must be the same part of speech
-- Correct answer: the ONE word that is both grammatically correct AND semantically precise for this exact context
-- Trap 1: A word that is vaguely related but imprecise (too broad)
-- Trap 2: A word that fits grammatically but changes the meaning entirely
-- Trap 3: A word that sounds right but doesn't fit the logic of the sentence
+- The blank must be a content word (verb, noun, or adjective) — not a function word
+- The correct answer must be the MOST precise and logical fit, not just grammatically acceptable
 
-═══════════════════════════════════════════
-QUESTION TYPE 2: MAIN_IDEA
-═══════════════════════════════════════════
-Format: Full literary or informational passage.
-Question stems (use one EXACTLY):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 2 — TEXT STRUCTURE AND PURPOSE (Purpose subtype)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Official name: "Text Structure and Purpose" — PURPOSE questions ask WHY the author wrote something.
+Format: Full passage. Question asks about a specific sentence's function OR the overall purpose.
+Question stems (EXACT — use one):
+- "Which choice best describes the function of the underlined sentence?"
+- "Which choice best describes the overall purpose of the text?"
+
+Real CB example (turtle fossils passage):
+"However, many of the fossil studies have relied on incomplete sets of data." [underlined]
+A) It offers an overview of the tools scientists use to examine fossils.
+B) It describes a limitation of some studies about the origin of turtles.
+C) It summarizes previous research on the evolution of crocodiles.
+D) It criticizes a widely held belief about genetic studies of reptiles.
+Answer: B
+
+Strategy: Focus on the VERB in each answer choice first — "offers," "describes," "summarizes," "criticizes." The right verb eliminates wrong answers fast.
+
+TRAP RULES:
+- Wrong verb trap: answer has the right content but the wrong rhetorical verb
+- Scope trap: answer describes what the sentence says but not what it DOES rhetorically
+- Adjacent content trap: answer mentions other content from the passage, not the target sentence
+- Overclaiming trap: answer says the sentence "criticizes" or "argues" when it merely "notes" or "suggests"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 3 — TEXT STRUCTURE AND PURPOSE (Structure subtype)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: Full passage. Question asks how the text is organized overall.
+Question stem (EXACT): "Which choice best describes the overall structure of the text?"
+
+Real CB example (lost films passage):
+A) The text identifies a complex problem, then presents examples of unsuccessful attempts to solve that problem.
+B) The text summarizes a debate among researchers, then gives reasons for supporting one side in that debate.
+C) The text describes a general situation, then illustrates that situation with specific examples.
+D) The text discusses several notable individuals, then explains commonly overlooked differences between those individuals.
+Answer: C
+
+Strategy: Make a quick "roadmap" of the text — what happens in the first half vs the second half? Then find the answer that matches both halves.
+
+TRAP RULES:
+- First-half correct trap: answer describes the opening correctly but mischaracterizes the ending
+- Second-half correct trap: answer describes the ending correctly but mischaracterizes the opening
+- Plausible but absent trap: describes a structure that sounds reasonable but isn't actually in the text
+- Scope trap: answer uses words like "debate" or "argument" when the text is actually descriptive
+
+Each answer choice MUST have two parts connected by "then" or "and."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 4 — CENTRAL IDEAS AND DETAILS (Main Idea subtype)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: Full passage.
+Question stems (EXACT — use one):
 - "Which choice best states the main idea of the text?"
 - "Which choice best states the main purpose of the text?"
 
-Real SAT example (from The Secret Garden passage):
-A) Mary hides in the garden to avoid doing her chores.
-B) Mary is getting bored with pulling up so many weeds in the garden.
-C) Mary is clearing out the garden to create a space to play.
-D) Mary feels very satisfied when she's taking care of the garden.
-Answer: D
+Real CB example (Himalayan songbirds passage):
+A) Barve's investigation shows that some species of Himalayan songbirds have evolved feathers that better regulate body temperature than do the feathers of other species, contradicting previous predictions.
+B) Barve found an association between habitat temperature and feather structure among Himalayan songbirds, lending new support to a general prediction.
+C) Barve discovered that songbirds have adapted to their environment by growing feathers without flat and smooth sections, complicating an earlier hypothesis.
+D) The results of Barve's study suggest that the ability of birds to withstand cold temperatures is determined more strongly by feather fluff than feather thickness, challenging an established belief.
+Answer: B
 
-RULES:
-- Correct answer: captures the central point accurately without overstating
-- Trap 1: A true but too-narrow detail from the passage
-- Trap 2: Contradicts the tone or content of the passage
-- Trap 3: Overstates — goes beyond what the passage says
+Strategy: Write a "headline" for the text — what would you say if summarizing it in one sentence? Then find the answer that matches, and check that the others are wrong for clear reasons.
 
-═══════════════════════════════════════════
-QUESTION TYPE 3: TEXT_STRUCTURE
-═══════════════════════════════════════════
-Format: Full passage.
-Question stems (use one EXACTLY):
-- "Which choice best describes the overall structure of the text?"
-- "Which choice best describes the function of the [first/second/third] sentence in the overall structure of the text?"
+TRAP RULES:
+- "Also-true" trap: answer states a true detail from the passage but NOT the main idea — this is the most common trap on main idea questions
+- Overstates trap: answer goes beyond what the passage actually claims (uses "proves" when the passage says "suggests")
+- Understates trap: answer only covers part of the main idea
+- Contradicts tone trap: answer implies the text is critical/negative when it's neutral, or vice versa
 
-Real SAT example (Walt Whitman poem):
-A) The speaker questions an increasingly prevalent attitude, then summarizes his worldview.
-B) The speaker regrets his isolation from others, then predicts a profound change in society.
-C) The speaker concedes his personal shortcomings, then boasts of his many achievements.
-D) The speaker addresses a criticism leveled against him, then announces a grand ambition of his.
-Answer: D
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 5 — CENTRAL IDEAS AND DETAILS (Detail subtype)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: Full passage. Question asks about a specific piece of information stated in the text.
+Question stem (EXACT): "According to the text, [specific question about a detail]?"
 
-RULES:
-- Each choice must have TWO parts connected by "then" or "and"
-- Correct answer: names both rhetorical moves accurately
-- Traps: get one part right but the other wrong
+Real CB example (archaeologists and scent passage):
+"According to the text, what is one reason some archaeologists are interested in recovering scents from ancient artifacts?"
+A) They are investigating whether people's sense of smell has declined in recent centuries.
+B) They believe the scents could illuminate important aspects of ancient life.
+C) They think that ancient scents would be enjoyable to people today.
+D) They hope to develop new medicines using ancient scent molecules.
+Answer: B
 
-═══════════════════════════════════════════
-QUESTION TYPE 4: COMMAND_OF_EVIDENCE
-═══════════════════════════════════════════
-Format: Passage presenting a researcher's claim or a student's hypothesis.
-Question stems (use one EXACTLY):
+Strategy: Find the specific part of the text that the question targets, then look for the answer that matches what's DIRECTLY STATED — not what's inferred.
+
+TRAP RULES:
+- Beyond the text trap: answer states something plausible but not actually written in the passage
+- Partial truth trap: answer includes one true detail but pairs it with something false or unstated
+- Adjacent detail trap: answer is about a different detail from the same passage
+- Inference trap: answer requires reading between the lines rather than finding what's stated directly
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 6 — COMMAND OF EVIDENCE (Textual)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: Passage presenting a researcher's claim or hypothesis.
+Question stems (EXACT — use one):
 - "Which finding, if true, would most directly support [name]'s hypothesis?"
 - "Which finding, if true, would most directly weaken the student's hypothesis?"
 
-RULES:
-- Correct answer: directly and specifically confirms or refutes the exact claim
-- Trap 1: Related to the topic but supports a different, adjacent claim
-- Trap 2: Relevant but only circumstantially supports/weakens
-- Trap 3: Sounds scientific but has no logical connection to the hypothesis
+Real CB example (solar chile roasting passage):
+"Armijo hypothesizes that they can reduce the roasting time for solar-roasted green chiles by using more heliostats."
+A) The temperature inside the roasting drum is distributed more evenly when roasting with solar power than with propane.
+B) Attempts to roast green chiles using 50 heliostats yields results in fewer than six minutes.
+C) Green chile connoisseurs prefer the flavor of solar-roasted green chiles over propane-roasted ones.
+D) The skins of solar-roasted green chiles are easier to peel than the skins of propane-roasted ones.
+Answer: B — directly tests the hypothesis that MORE heliostats = FASTER roasting.
 
-═══════════════════════════════════════════
-QUESTION TYPE 5: LOGICAL_COMPLETION
-═══════════════════════════════════════════
-Format: Passage building an argument, ending with [BLANK] to be completed.
-Question stem (use EXACTLY): "Which choice most logically completes the text?"
+Strategy: First state the hypothesis in your own words. Then find the answer that directly confirms or contradicts THAT EXACT claim — not a related but different claim.
 
-RULES:
-- Correct answer: follows NECESSARILY and DIRECTLY from the argument
-- Trap 1: True but not a logical consequence of this specific argument
-- Trap 2: Overstates beyond what evidence supports
-- Trap 3: A reasonable but unrelated conclusion
+TRAP RULES:
+- Adjacent topic trap: answer is about the same subject but tests a different hypothesis
+- Indirect support trap: answer is related but doesn't directly confirm the specific claim
+- Irrelevant detail trap: answer introduces new information unrelated to the hypothesis
+- Direction trap (for "weaken" questions): answer actually supports instead of weakens
 
-═══════════════════════════════════════════
-QUESTION TYPE 6: TRANSITION
-═══════════════════════════════════════════
-Format: Passage with [BLANK] where a transition word/phrase goes.
-Question stem (use EXACTLY): "Which choice completes the text with the most logical transition?"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 7 — INFERENCES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: Passage building an argument or presenting evidence, ending with [BLANK].
+Question stem (EXACT): "Which choice most logically completes the text?"
 
-Common correct answers: However, Therefore, Additionally, Finally, In addition, Consequently, Alternatively, Instead, Moreover, Similarly
+Real CB example (pay-as-you-wish pricing passage):
+"Hence, the 'pay as you wish' model may [BLANK]"
+A) prove financially successful for some musicians but disappointing for others.
+B) hold greater financial appeal for bands than for individual musicians.
+C) cause most musicians who use the model to lower their suggested prices over time.
+D) more strongly reflect differences in certain musicians' popularity than traditional pricing models do.
+Answer: A — the passage gives one example of failure (Harvey Danger) and one of success (Jane Siberry), so the logical conclusion is that results vary.
 
-Real SAT example: "Geoscientists have long considered Hawaii's Mauna Loa volcano to be Earth's largest shield volcano by volume... [BLANK] according to a 2020 study, Hawaii's Pūhāhonu shield volcano is significantly larger."
-Answer: D) However
+Strategy: Read the whole passage. What is it building toward? Fill in the blank in your own words BEFORE looking at the choices.
 
-RULES:
-- Correct answer: reflects the EXACT logical relationship between the two ideas
-- Trap 1: A transition implying addition when contrast is needed (or vice versa)
-- Trap 2: A transition implying causation when the relationship is contrast
-- Trap 3: A transition that is grammatically fine but logically wrong
+TRAP RULES — the 4 classic SAT inference traps:
+- Extreme trap: uses "always," "never," "all," "none," "every" — correct answers use "may," "often," "some," "likely"
+- Opposite trap: draws the exact opposite conclusion from what the evidence supports
+- "Also-true" trap: states something true from the passage but isn't the logical completion of the argument
+- "Possible but unsupported" trap: sounds plausible and reasonable but isn't grounded in the specific evidence presented
 
-═══════════════════════════════════════════
-QUESTION TYPE 7: STANDARD_ENGLISH
-═══════════════════════════════════════════
-Format: Sentence with [BLANK] requiring a grammatical choice.
-Question stem (use EXACTLY): "Which choice completes the text so that it conforms to the conventions of Standard English?"
-
-Grammar rules to test (pick exactly ONE):
-- Possessives vs. plurals: "people's stories" vs "peoples story's"
-- Subject-verb agreement with intervening phrase
-- Punctuation with transitional adverbs: semicolon/comma placement
-- Em dash vs. comma vs. period for sentence boundaries
-- Colon vs. semicolon vs. comma between clauses
-- Dangling modifier correction
-- Verb tense consistency
-- Appositive punctuation
-
-Real SAT example: "the triangle representing the mountain itself [BLANK] among the few defined figures in her paintings."
-A) are  B) have been  C) were  D) is
-Answer: D
-
-RULES:
-- All 4 choices differ ONLY in punctuation or one grammatical element
-- Wrong answers represent real, common grammar errors
-- The sentence must be complex enough that the error is non-obvious
-
-═══════════════════════════════════════════
-QUESTION TYPE 8: RHETORICAL_SYNTHESIS
-═══════════════════════════════════════════
-Format: 4-5 bullet-point notes about a topic with a specific goal.
-Question stem (use one EXACTLY):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 8 — RHETORICAL SYNTHESIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: 4–5 bullet-point notes. Question states a specific goal for the student.
+Question stems (EXACT — pick one, fill in specifics):
 - "The student wants to emphasize a difference between [X] and [Y]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
+- "The student wants to emphasize the [specific detail, e.g. distance/date/location] of [X]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
 - "The student wants to present [topic] to an audience unfamiliar with [subject]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
 - "The student wants to explain an advantage of [X]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
-- "The student wants to emphasize a similarity between [X] and [Y]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
+- "The student wants to introduce [person]'s [work] to an audience already familiar with [context]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
 
-Real SAT example (baking soda vs. baking powder):
-D) To produce carbon dioxide within a liquid batter, baking soda needs to be mixed with an acidic ingredient, whereas baking powder does not.
-Answer: D — directly states the key difference.
+Real CB example (Philadelphia Turnpike):
+Goal: "The student wants to emphasize the distance covered by the Philadelphia and Lancaster Turnpike."
+A) The sixty-two-mile-long Philadelphia and Lancaster Turnpike connected the Pennsylvania cities of Philadelphia and Lancaster.
+B) The Philadelphia and Lancaster Turnpike was the first private turnpike in the United States.
+C) The Philadelphia and Lancaster Turnpike, which connected two Pennsylvania cities, was built between 1792 and 1794.
+D) A historic Pennsylvania road, the Philadelphia and Lancaster Turnpike was completed in 1794.
+Answer: A — puts the distance (62 miles) prominently at the front of the sentence.
 
-RULES:
-- All 4 choices must use information that actually appears in the notes
-- Correct answer: directly and specifically accomplishes the stated goal
-- Trap 1: Uses notes accurately but accomplishes a DIFFERENT goal
-- Trap 2: Accomplishes the goal but omits essential information
-- Trap 3: Too vague or general to accomplish the specific goal
+Strategy: The question tells you almost everything. What does the student want to accomplish? Find the answer that does EXACTLY that, using information from the notes.
 
-═══════════════════════════════════════════
-UNIVERSAL RULES:
-═══════════════════════════════════════════
-1. Answer choices must be similar in length
-2. Correct answer is always derivable from the passage/notes alone
-3. Wrong answers must be genuinely tempting
-4. Use formal academic language matching real SAT register
-5. Question stems must use the EXACT phrasing shown above
-6. Never reference line numbers
+TRAP RULES:
+- Wrong goal trap: answer uses notes accurately but accomplishes a DIFFERENT goal than the one stated
+- Incomplete trap: accomplishes the goal but leaves out key information needed to do so effectively
+- Vague trap: too general to clearly accomplish the specific stated goal
+- Off-topic trap: uses details from the notes that are irrelevant to the stated goal
 
-CRITICAL: Respond with ONLY a valid JSON object. No markdown. No backticks. Start with { end with }.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 9 — TRANSITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: Passage with [BLANK] where a transition word/phrase belongs.
+Question stem (EXACT): "Which choice completes the text with the most logical transition?"
+
+Real CB example: "Award-winning travel writer Linda Watanabe McFerrin considers the background research she conducts on destinations featured in her travel books to be its own reward. [BLANK] McFerrin admits to finding the research phase of her work just as fascinating and engaging as exploring a location in person."
+A) By contrast,  B) Likewise,  C) Besides,  D) In fact,
+Answer: D — "In fact" signals that the second sentence reinforces and amplifies the first, not contrasts it.
+
+Transition categories to test:
+- CONTRAST: However, Nevertheless, By contrast, Instead, On the other hand
+- ADDITION: Furthermore, Moreover, Additionally, In addition, Also  
+- CAUSE/EFFECT: Therefore, Consequently, As a result, Thus, Hence
+- SEQUENCE: First, Then, Finally, Subsequently, Meanwhile
+- EMPHASIS/CLARIFICATION: In fact, Indeed, Specifically, In other words
+- CONCESSION: Although, Even so, Regardless, Still
+
+TRAP RULES:
+- Wrong relationship trap: uses a word from the right general category but wrong specific relationship
+- Opposite relationship trap: uses a contrast word when addition is needed, or vice versa
+- Causation vs. contrast trap: "Therefore" vs. "However" — very common mix-up
+- Similar-sounding trap: "Likewise" vs. "In fact" vs. "Besides" — all feel similar but mean different things
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 10 — BOUNDARIES (Punctuation)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Official name: "Boundaries"
+Format: Sentence with [BLANK] where punctuation is needed.
+Question stem (EXACT): "Which choice completes the text so that it conforms to the conventions of Standard English?"
+
+Real CB example (apiary example):
+"In 2017, the couple converted a vacant lot in the city into an [BLANK]; in the years that followed they acquired nine additional lots."
+A) apiary,  B) apiary, and  C) apiary and  D) apiary
+Answer: A — semicolons join two independent clauses; the comma after "apiary" is correct here before the semicolon.
+
+Punctuation rules to test (pick ONE per question):
+- Semicolons join two independent clauses: "She studied; she succeeded."
+- Colons introduce a list or elaboration that follows a complete clause
+- Em dashes set off parenthetical information or create emphasis
+- Commas with appositives: "The scientist, a renowned biologist, published her findings."
+- No punctuation when a relative clause is restrictive: "The book that I read was fascinating."
+- Transitional adverb punctuation: independent clause + semicolon + however + comma + independent clause
+
+TRAP RULES:
+- All 4 choices must differ ONLY in punctuation — same words every time
+- Wrong separator trap: comma where semicolon needed (comma splice)
+- Missing separator trap: no punctuation between two independent clauses (run-on)
+- Unnecessary punctuation trap: adds a comma that breaks up a necessary grammatical unit
+- Wrong mark trap: colon where semicolon is needed or vice versa
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 11 — FORM, STRUCTURE, AND SENSE (Grammar)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Official name: "Form, Structure, and Sense"
+Format: Sentence with [BLANK] requiring a grammatical form choice.
+Question stem (EXACT): "Which choice completes the text so that it conforms to the conventions of Standard English?"
+
+Real CB example (subject-verb agreement):
+"The triangle representing the mountain itself [BLANK] among the few defined figures in her paintings."
+A) are  B) have been  C) were  D) is
+Answer: D — "triangle" is the subject (singular), so "is" is correct despite the intervening phrase.
+
+Grammar rules to test (pick ONE per question):
+- Subject-verb agreement with intervening prepositional phrase or relative clause
+- Possessives vs. plurals: "people's stories" not "peoples story's"
+- Dangling modifiers: the subject after the comma must be the one doing the action in the opening phrase
+- Verb tense consistency within a passage
+- Pronoun-antecedent agreement
+- Parallel structure in lists
+- Infinitive vs. gerund after specific verbs
+
+TRAP RULES:
+- All 4 choices must differ ONLY in one grammatical element
+- Agreement confusion trap: students pick the verb that agrees with the nearest noun, not the actual subject
+- Tense confusion trap: students pick a tense that sounds natural but is inconsistent with the passage
+- Possessive confusion trap: "it's" vs "its," "who's" vs "whose"
+- Modifier attachment trap: students don't notice the dangling modifier
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CROSS-TEXT CONNECTIONS (Bonus type — paired passages)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: Two short passages on related topics (Text 1 and Text 2).
+Question stems (EXACT — use one):
+- "Based on the texts, both authors would most likely agree with which statement?"
+- "Based on the texts, how would the author of Text 2 most likely respond to the claim in Text 1 that [specific claim]?"
+
+Strategy: Identify whether looking for AGREEMENT or DISAGREEMENT. For agreement, find the simplest claim both texts could support. For disagreement, find the specific point of contrast.
+
+TRAP RULES:
+- Extreme agreement trap: states more agreement than both texts actually support
+- One-text trap: only supported by one text, not both
+- Opposite trap: states a disagreement when both texts actually agree, or vice versa
+- Overstates trap: goes beyond what either text claims
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+UNIVERSAL RULES FOR ALL QUESTION TYPES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Answer choices must be SIMILAR IN LENGTH — no single choice dramatically longer than others
+2. Correct answer is ALWAYS derivable from the passage/notes alone — no outside knowledge required
+3. Wrong answers must be GENUINELY TEMPTING — use the trap types listed for each question type
+4. Use FORMAL ACADEMIC language matching the register of real SAT questions
+5. Question stems must use the EXACT OFFICIAL PHRASING shown above
+6. NEVER reference line numbers
+7. Wrong answers should never be obviously, laughably wrong — they should fool students who haven't mastered the strategy
+
+CRITICAL: Your ENTIRE response must be a single valid JSON object. No explanation before or after. No markdown. No backticks. Start your response with { and end with }.
 
 {
-  "type": "WORD_CHOICE",
-  "passage_excerpt": "Sentence with [BLANK] — only for WORD_CHOICE, TRANSITION, STANDARD_ENGLISH. Set null for all others.",
+  "type": "WORDS_IN_CONTEXT",
+  "passage_excerpt": "Sentence with [BLANK] here — ONLY for WORDS_IN_CONTEXT, TRANSITIONS, BOUNDARIES, FORM_STRUCTURE_SENSE. Set to null for all other types.",
   "question": "Which choice completes the text with the most logical and precise word or phrase?",
   "choices": {
-    "A": "first choice",
-    "B": "second choice",
-    "C": "third choice",
-    "D": "fourth choice"
+    "A": "first answer choice",
+    "B": "second answer choice",
+    "C": "third answer choice",
+    "D": "fourth answer choice"
   },
   "correct": "B",
-  "explanation": "Why the correct answer is right, grounded in the passage.",
+  "explanation": "Clear explanation of why the correct answer is right, grounded specifically in the passage.",
   "trap_explanations": {
-    "A": "Why A is tempting but wrong",
-    "C": "Why C is tempting but wrong",
-    "D": "Why D is tempting but wrong"
+    "A": "Why A is tempting but wrong — reference the specific trap type",
+    "C": "Why C is tempting but wrong — reference the specific trap type",
+    "D": "Why D is tempting but wrong — reference the specific trap type"
   }
 }`;
+
+// ── QUESTION TYPE WEIGHTS ────────────────────────────────────────────────────
+// Matches approximate real SAT distribution
+const PASSAGE_TYPES = [
+  'WORDS_IN_CONTEXT',
+  'WORDS_IN_CONTEXT',         // 2x weight — most common on real SAT
+  'TEXT_PURPOSE',
+  'TEXT_STRUCTURE',
+  'MAIN_IDEA',
+  'DETAIL',
+  'COMMAND_OF_EVIDENCE',
+  'INFERENCES',
+  'TRANSITIONS',
+  'TRANSITIONS',              // 2x weight
+  'BOUNDARIES',
+  'FORM_STRUCTURE_SENSE',
+];
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -250,12 +441,13 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const useNotes = Math.random() < 0.25;
+    // Distribution: 20% rhetorical synthesis, 10% cross-text, 70% passage-based
+    const rand = Math.random();
     let userPrompt;
     let passage;
 
-    if (useNotes) {
-      // Rhetorical synthesis — use notes set
+    if (rand < 0.20) {
+      // ── RHETORICAL SYNTHESIS ──
       const notesSet = notesSets[Math.floor(Math.random() * notesSets.length)];
       passage = {
         id: notesSet.id,
@@ -265,26 +457,28 @@ export default async function handler(req, res) {
         genre: 'rhetorical_synthesis',
         text: notesSet.notes.map(n => `• ${n}`).join('\n'),
       };
-      userPrompt = `Generate a RHETORICAL_SYNTHESIS SAT question using these student notes:
+      userPrompt = `Generate a RHETORICAL_SYNTHESIS SAT question using these student notes.
 
 Topic: ${notesSet.topic}
 Notes:
 ${notesSet.notes.map(n => `• ${n}`).join('\n')}
 
-The question stem must state a specific goal. All 4 answer choices must be complete sentences using information from the notes. Respond with ONLY a JSON object.`;
+REQUIREMENTS:
+- The question stem must state a SPECIFIC, concrete goal (e.g., "emphasize the distance covered by X" or "present X to an audience unfamiliar with Y")
+- All 4 answer choices must be complete sentences that use ONLY information from the notes above
+- The correct answer must directly and specifically accomplish the stated goal
+- The 3 wrong answers must each accomplish a DIFFERENT goal, or be vague, or omit key information
 
-    } else {
-      // Use a real public domain passage from passages.js
-      // 10% chance of paired passage (cross-text connections)
-      const usePaired = Math.random() < 0.10;
+Respond with ONLY a JSON object. Set passage_excerpt to null.`;
 
-      if (usePaired) {
-        const paired = getPairedPassage();
-        passage = {
-          ...paired,
-          text: `Text 1\n${paired.text_a.text}\n\nText 2\n${paired.text_b.text}`,
-        };
-        userPrompt = `Generate a CROSS_TEXT SAT question for these two paired passages. The question should ask how the author of Text 2 would respond to a claim in Text 1, or what both texts have in common.
+    } else if (rand < 0.30) {
+      // ── CROSS-TEXT CONNECTIONS ──
+      const paired = getPairedPassage();
+      passage = {
+        ...paired,
+        text: `Text 1\n${paired.text_a.text}\n\nText 2\n${paired.text_b.text}`,
+      };
+      userPrompt = `Generate a CROSS_TEXT_CONNECTIONS SAT question for these two passages.
 
 Text 1 by ${paired.text_a.author} (${paired.text_a.year}):
 ${paired.text_a.text}
@@ -292,14 +486,21 @@ ${paired.text_a.text}
 Text 2 by ${paired.text_b.author} (${paired.text_b.year}):
 ${paired.text_b.text}
 
-Use question stem: "Based on the texts, how would [Text 2 author] most likely respond to the claim in Text 1 that [specific claim]?"
-Respond with ONLY a JSON object.`;
+REQUIREMENTS:
+- Use one of these EXACT question stems:
+  "Based on the texts, both authors would most likely agree with which statement?"
+  OR "Based on the texts, how would the author of Text 2 most likely respond to the claim in Text 1 that [specific claim from Text 1]?"
+- Correct answer: the simplest claim BOTH texts actually support (for agreement) OR the specific point of contrast (for disagreement)
+- Wrong answers: one overstates the agreement, one is only supported by one text, one contradicts both texts
 
-      } else {
-        passage = getRandomPassage();
-        const types = ['WORD_CHOICE', 'MAIN_IDEA', 'TEXT_STRUCTURE', 'COMMAND_OF_EVIDENCE', 'LOGICAL_COMPLETION', 'TRANSITION', 'STANDARD_ENGLISH'];
-        const chosenType = types[Math.floor(Math.random() * types.length)];
-        userPrompt = `Generate a ${chosenType} SAT question for this passage:
+Respond with ONLY a JSON object. Set passage_excerpt to null.`;
+
+    } else {
+      // ── PASSAGE-BASED QUESTION ──
+      passage = getRandomPassage();
+      const chosenType = PASSAGE_TYPES[Math.floor(Math.random() * PASSAGE_TYPES.length)];
+
+      userPrompt = `Generate a ${chosenType} SAT question for this passage.
 
 Title: "${passage.title}" by ${passage.author} (${passage.year})
 Genre: ${passage.genre}
@@ -307,8 +508,13 @@ Genre: ${passage.genre}
 Passage:
 ${passage.text}
 
+Question type to generate: ${chosenType}
+- Use the EXACT question stem specified for this type in your instructions
+- For ${chosenType === 'WORDS_IN_CONTEXT' || chosenType === 'TRANSITIONS' || chosenType === 'BOUNDARIES' || chosenType === 'FORM_STRUCTURE_SENSE' ? 'this fill-in-blank type: put the sentence containing [BLANK] in passage_excerpt' : 'this type: set passage_excerpt to null'}
+- Include all 4 trap types for this question type in your wrong answers
+- Use formal SAT-register language throughout
+
 Respond with ONLY a JSON object.`;
-      }
     }
 
     const response = await groq.chat.completions.create({
@@ -317,7 +523,7 @@ Respond with ONLY a JSON object.`;
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userPrompt }
       ],
-      temperature: 0.95,
+      temperature: 0.9,
     });
 
     let raw = response.choices[0].message.content.trim();
