@@ -298,7 +298,7 @@ function getPairedPassage() {
   return paired[Math.floor(Math.random() * paired.length)];
 }
 
-module.exports = {
+export {
   passages,
   getPassageByGenre,
   getPassageByDifficulty,

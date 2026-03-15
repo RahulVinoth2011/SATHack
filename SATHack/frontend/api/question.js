@@ -1,102 +1,247 @@
 import Groq from 'groq-sdk';
+import { getRandomPassage, getPairedPassage } from '../passages.js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const passages = [
+const notesSets = [
   {
-    id: "douglass_01",
-    title: "What to the Slave is the Fourth of July?",
-    author: "Frederick Douglass",
-    year: 1852,
-    genre: "historical_document",
-    text: `Fellow-citizens, pardon me, allow me to ask, why am I called upon to speak here today? What have I, or those I represent, to do with your national independence? Are the great principles of political freedom and of natural justice, embodied in that Declaration of Independence, extended to us? Would to God, both for your sakes and ours, that an affirmative answer could be truthfully returned to these questions! But such is not the state of the case. I say it with a sad sense of the disparity between us. I am not included within the pale of this glorious anniversary. The rich inheritance of justice, liberty, prosperity, and independence bequeathed by your fathers is shared by you, not by me.`,
+    id: "notes_bees",
+    topic: "Bee Navigation",
+    notes: [
+      "Honeybees (Apis mellifera) use a 'waggle dance' to communicate the location of food sources to other bees.",
+      "The angle of the dance relative to vertical indicates the direction of the food source relative to the sun.",
+      "The duration of the waggle run indicates the distance to the food source.",
+      "Bees that observe the dance are able to fly directly to the food source.",
+      "Karl von Frisch first decoded the meaning of the waggle dance in the 1940s.",
+    ],
   },
   {
-    id: "darwin_01",
-    title: "On the Origin of Species",
-    author: "Charles Darwin",
-    year: 1859,
-    genre: "science",
-    text: `It may be said that natural selection is daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good; silently and insensibly working, whenever and wherever opportunity offers, at the improvement of each organic being in relation to its organic and inorganic conditions of life. We see nothing of these slow changes in progress, until the hand of time has marked the long lapses of ages, and then so imperfect is our view into long past geological ages, that we only see that the forms of life are now different from what they formerly were.`,
+    id: "notes_permafrost",
+    topic: "Permafrost and Climate",
+    notes: [
+      "Permafrost is ground that remains frozen for two or more consecutive years.",
+      "Permafrost covers about 25% of the Northern Hemisphere's land surface.",
+      "When permafrost thaws, it releases carbon dioxide and methane stored in organic matter.",
+      "Methane is approximately 25 times more potent as a greenhouse gas than carbon dioxide over a 100-year period.",
+      "Scientists estimate that permafrost contains roughly twice as much carbon as is currently in the atmosphere.",
+    ],
   },
   {
-    id: "dubois_01",
-    title: "The Souls of Black Folk",
-    author: "W.E.B. Du Bois",
-    year: 1903,
-    genre: "essay",
-    text: `It is a peculiar sensation, this double-consciousness, this sense of always looking at one's self through the eyes of others, of measuring one's soul by the tape of a world that looks on in amused contempt and pity. One ever feels his two-ness — an American, a Negro; two souls, two thoughts, two unreconciled strivings; two warring ideals in one dark body, whose dogged strength alone keeps it from being torn asunder. The history of the American Negro is the history of this strife — this longing to attain self-conscious manhood, to merge his double self into a better and truer self.`,
+    id: "notes_urban_heat",
+    topic: "Urban Heat Islands",
+    notes: [
+      "Urban heat islands form when cities replace natural land cover with dense concentrations of pavement, buildings, and other surfaces.",
+      "These surfaces absorb and re-emit the sun's heat more than natural landscapes such as forests and water bodies.",
+      "Temperatures in urban areas can be 1–7°F higher than in surrounding rural areas.",
+      "Green roofs — rooftops covered with vegetation — can reduce urban surface temperatures by up to 40°F.",
+      "Researcher Matei Georgescu found that large-scale adoption of green roofs in Phoenix, Arizona could reduce peak summer temperatures by up to 3°F.",
+    ],
   },
   {
-    id: "austen_01",
-    title: "Pride and Prejudice",
-    author: "Jane Austen",
-    year: 1813,
-    genre: "literary_fiction",
-    text: `It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife. However little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered as the rightful property of some one or other of their daughters. My dear Mr. Bennet, said his lady to him one day, have you heard that Netherfield Park is let at last? Mr. Bennet replied that he had not. But it is, returned she; for Mrs. Long has just been here, and she told me all about it.`,
+    id: "notes_sourdough",
+    topic: "Sourdough Fermentation",
+    notes: [
+      "Sourdough bread is leavened using a starter culture containing wild yeasts and lactic acid bacteria.",
+      "The bacteria produce lactic and acetic acids, which give sourdough its distinctive tangy flavor.",
+      "Longer fermentation times produce more acetic acid, resulting in a more sour taste.",
+      "Lactic acid bacteria also break down phytic acid in wheat, which can inhibit the absorption of minerals such as iron and zinc.",
+      "A 2019 study by researchers at Stanford University found that sourdough fermentation significantly increased the bioavailability of iron in wheat flour.",
+    ],
   },
   {
-    id: "thoreau_01",
-    title: "Civil Disobedience",
-    author: "Henry David Thoreau",
-    year: 1849,
-    genre: "essay",
-    text: `I heartily accept the motto, that government is best which governs least; and I should like to see it acted up to more rapidly and systematically. Carried out, it finally amounts to this, which also I believe: that government is best which governs not at all; and when men are prepared for it, that will be the kind of government which they will have. Government is at best but an expedient; but most governments are usually, and all governments are sometimes, inexpedient. The objections which have been brought against a standing army, and they are many and weighty, and deserve to prevail, may also at last be brought against a standing government.`,
-  },
-  {
-    id: "anthony_01",
-    title: "Is It a Crime for a Citizen to Vote?",
-    author: "Susan B. Anthony",
-    year: 1873,
-    genre: "historical_document",
-    text: `Friends and fellow citizens: I stand before you tonight under indictment for the alleged crime of having voted at the last presidential election, without having a lawful right to vote. It shall be my work this evening to prove to you that in thus voting, I not only committed no crime, but, instead, simply exercised my citizen's rights, guaranteed to me and all United States citizens by the National Constitution, beyond the power of any state to deny.`,
-  },
-  {
-    id: "emerson_01",
-    title: "Self-Reliance",
-    author: "Ralph Waldo Emerson",
-    year: 1841,
-    genre: "essay",
-    text: `To believe your own thought, to believe that what is true for you in your private heart is true for all men — that is genius. Speak your latent conviction, and it shall be the universal sense; for the inmost in due time becomes the outmost, and our first thought is rendered back to us by the trumpets of the Last Judgment. Familiar as the voice of the mind is to each, the highest merit we ascribe to Moses, Plato, and Milton is that they set at naught books and traditions, and spoke not what men thought, but what they thought.`,
-  },
-  {
-    id: "wharton_01",
-    title: "The Age of Innocence",
-    author: "Edith Wharton",
-    year: 1920,
-    genre: "literary_fiction",
-    text: `On a January evening of the early seventies, Christine Nilsson was singing in Faust at the Academy of Music in New York. Though there was already talk of the erection of a new Opera House which should compete in costliness and splendour with those of the great European capitals, the world of fashion was still content to reassemble every winter in the shabby red and gold boxes of the sociable old Academy. Conservatives cherished it for being small and inconvenient, and thus keeping out the new people whom New York was beginning to dread and yet be drawn to.`,
+    id: "notes_bioluminescence",
+    topic: "Bioluminescence in Marine Animals",
+    notes: [
+      "Bioluminescence is the production and emission of light by living organisms.",
+      "An estimated 76% of ocean animals are capable of producing light.",
+      "Marine bioluminescence is produced through a chemical reaction involving a compound called luciferin.",
+      "Some deep-sea fish use bioluminescent lures to attract prey in the darkness of the ocean floor.",
+      "Biologist Edith Widder has argued that bioluminescence is the most common form of communication on Earth.",
+    ],
   },
 ];
 
-const SYSTEM_PROMPT = `You are an expert Digital SAT question writer. Generate exactly ONE SAT-style question from the given passage.
+const SYSTEM_PROMPT = `You are an expert Digital SAT Reading and Writing question writer. Your questions must exactly match the style, structure, difficulty, and phrasing of official College Board Digital SAT questions.
 
-Pick ONE of these question types:
-- WORD_CHOICE: Take one sentence, replace a key word with [BLANK], ask "Which choice completes the text with the most logical and precise word or phrase?"
-- TRANSITION: Take one sentence, replace a transition word with [BLANK], ask "Which choice completes the text with the most logical transition?"
-- CENTRAL_IDEA: Ask what the main idea or primary purpose of the passage is.
-- INFERENCE: Ask what can be reasonably concluded from the passage.
-- VOCAB_IN_CONTEXT: Ask what a specific word most nearly means as used in the passage.
-- TEXT_STRUCTURE: Ask why the author included a specific detail or used a specific technique.
-- GRAMMAR: Take one sentence, introduce a grammatical issue with [BLANK], ask "Which choice conforms to the conventions of Standard English?"
+Study these question type patterns carefully and replicate them exactly:
+
+═══════════════════════════════════════════
+QUESTION TYPE 1: WORD_CHOICE
+═══════════════════════════════════════════
+Format: Short passage (1-3 sentences) with one key word replaced by [BLANK].
+Question stem (use EXACTLY): "Which choice completes the text with the most logical and precise word or phrase?"
+
+Real SAT example:
+"NASA scientist Daniella DellaGiustina reports that despite facing the unexpected obstacle of a surface mostly covered in boulders, OSIRIS-REx successfully [BLANK] a sample of the surface, gathering pieces of it to bring back to Earth."
+A) attached  B) collected  C) followed  D) replaced
+Answer: B — "collected a sample" is the only phrase that is both precise and fits the action of gathering material.
 
 RULES:
-- Correct answer must be directly supported by the passage
-- All 4 choices must be similar in length and plausible
-- Wrong answers must be genuinely tempting traps
-- For WORD_CHOICE, TRANSITION, GRAMMAR: put sentence with [BLANK] in passage_excerpt
-- For other types: set passage_excerpt to null
+- All 4 choices must be the same part of speech
+- Correct answer: the ONE word that is both grammatically correct AND semantically precise for this exact context
+- Trap 1: A word that is vaguely related but imprecise (too broad)
+- Trap 2: A word that fits grammatically but changes the meaning entirely
+- Trap 3: A word that sounds right but doesn't fit the logic of the sentence
+
+═══════════════════════════════════════════
+QUESTION TYPE 2: MAIN_IDEA
+═══════════════════════════════════════════
+Format: Full literary or informational passage.
+Question stems (use one EXACTLY):
+- "Which choice best states the main idea of the text?"
+- "Which choice best states the main purpose of the text?"
+
+Real SAT example (from The Secret Garden passage):
+A) Mary hides in the garden to avoid doing her chores.
+B) Mary is getting bored with pulling up so many weeds in the garden.
+C) Mary is clearing out the garden to create a space to play.
+D) Mary feels very satisfied when she's taking care of the garden.
+Answer: D
+
+RULES:
+- Correct answer: captures the central point accurately without overstating
+- Trap 1: A true but too-narrow detail from the passage
+- Trap 2: Contradicts the tone or content of the passage
+- Trap 3: Overstates — goes beyond what the passage says
+
+═══════════════════════════════════════════
+QUESTION TYPE 3: TEXT_STRUCTURE
+═══════════════════════════════════════════
+Format: Full passage.
+Question stems (use one EXACTLY):
+- "Which choice best describes the overall structure of the text?"
+- "Which choice best describes the function of the [first/second/third] sentence in the overall structure of the text?"
+
+Real SAT example (Walt Whitman poem):
+A) The speaker questions an increasingly prevalent attitude, then summarizes his worldview.
+B) The speaker regrets his isolation from others, then predicts a profound change in society.
+C) The speaker concedes his personal shortcomings, then boasts of his many achievements.
+D) The speaker addresses a criticism leveled against him, then announces a grand ambition of his.
+Answer: D
+
+RULES:
+- Each choice must have TWO parts connected by "then" or "and"
+- Correct answer: names both rhetorical moves accurately
+- Traps: get one part right but the other wrong
+
+═══════════════════════════════════════════
+QUESTION TYPE 4: COMMAND_OF_EVIDENCE
+═══════════════════════════════════════════
+Format: Passage presenting a researcher's claim or a student's hypothesis.
+Question stems (use one EXACTLY):
+- "Which finding, if true, would most directly support [name]'s hypothesis?"
+- "Which finding, if true, would most directly weaken the student's hypothesis?"
+
+RULES:
+- Correct answer: directly and specifically confirms or refutes the exact claim
+- Trap 1: Related to the topic but supports a different, adjacent claim
+- Trap 2: Relevant but only circumstantially supports/weakens
+- Trap 3: Sounds scientific but has no logical connection to the hypothesis
+
+═══════════════════════════════════════════
+QUESTION TYPE 5: LOGICAL_COMPLETION
+═══════════════════════════════════════════
+Format: Passage building an argument, ending with [BLANK] to be completed.
+Question stem (use EXACTLY): "Which choice most logically completes the text?"
+
+RULES:
+- Correct answer: follows NECESSARILY and DIRECTLY from the argument
+- Trap 1: True but not a logical consequence of this specific argument
+- Trap 2: Overstates beyond what evidence supports
+- Trap 3: A reasonable but unrelated conclusion
+
+═══════════════════════════════════════════
+QUESTION TYPE 6: TRANSITION
+═══════════════════════════════════════════
+Format: Passage with [BLANK] where a transition word/phrase goes.
+Question stem (use EXACTLY): "Which choice completes the text with the most logical transition?"
+
+Common correct answers: However, Therefore, Additionally, Finally, In addition, Consequently, Alternatively, Instead, Moreover, Similarly
+
+Real SAT example: "Geoscientists have long considered Hawaii's Mauna Loa volcano to be Earth's largest shield volcano by volume... [BLANK] according to a 2020 study, Hawaii's Pūhāhonu shield volcano is significantly larger."
+Answer: D) However
+
+RULES:
+- Correct answer: reflects the EXACT logical relationship between the two ideas
+- Trap 1: A transition implying addition when contrast is needed (or vice versa)
+- Trap 2: A transition implying causation when the relationship is contrast
+- Trap 3: A transition that is grammatically fine but logically wrong
+
+═══════════════════════════════════════════
+QUESTION TYPE 7: STANDARD_ENGLISH
+═══════════════════════════════════════════
+Format: Sentence with [BLANK] requiring a grammatical choice.
+Question stem (use EXACTLY): "Which choice completes the text so that it conforms to the conventions of Standard English?"
+
+Grammar rules to test (pick exactly ONE):
+- Possessives vs. plurals: "people's stories" vs "peoples story's"
+- Subject-verb agreement with intervening phrase
+- Punctuation with transitional adverbs: semicolon/comma placement
+- Em dash vs. comma vs. period for sentence boundaries
+- Colon vs. semicolon vs. comma between clauses
+- Dangling modifier correction
+- Verb tense consistency
+- Appositive punctuation
+
+Real SAT example: "the triangle representing the mountain itself [BLANK] among the few defined figures in her paintings."
+A) are  B) have been  C) were  D) is
+Answer: D
+
+RULES:
+- All 4 choices differ ONLY in punctuation or one grammatical element
+- Wrong answers represent real, common grammar errors
+- The sentence must be complex enough that the error is non-obvious
+
+═══════════════════════════════════════════
+QUESTION TYPE 8: RHETORICAL_SYNTHESIS
+═══════════════════════════════════════════
+Format: 4-5 bullet-point notes about a topic with a specific goal.
+Question stem (use one EXACTLY):
+- "The student wants to emphasize a difference between [X] and [Y]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
+- "The student wants to present [topic] to an audience unfamiliar with [subject]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
+- "The student wants to explain an advantage of [X]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
+- "The student wants to emphasize a similarity between [X] and [Y]. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
+
+Real SAT example (baking soda vs. baking powder):
+D) To produce carbon dioxide within a liquid batter, baking soda needs to be mixed with an acidic ingredient, whereas baking powder does not.
+Answer: D — directly states the key difference.
+
+RULES:
+- All 4 choices must use information that actually appears in the notes
+- Correct answer: directly and specifically accomplishes the stated goal
+- Trap 1: Uses notes accurately but accomplishes a DIFFERENT goal
+- Trap 2: Accomplishes the goal but omits essential information
+- Trap 3: Too vague or general to accomplish the specific goal
+
+═══════════════════════════════════════════
+UNIVERSAL RULES:
+═══════════════════════════════════════════
+1. Answer choices must be similar in length
+2. Correct answer is always derivable from the passage/notes alone
+3. Wrong answers must be genuinely tempting
+4. Use formal academic language matching real SAT register
+5. Question stems must use the EXACT phrasing shown above
+6. Never reference line numbers
 
 CRITICAL: Respond with ONLY a valid JSON object. No markdown. No backticks. Start with { end with }.
 
 {
-  "type": "CENTRAL_IDEA",
-  "passage_excerpt": null,
-  "question": "The main purpose of this passage is to",
-  "choices": { "A": "...", "B": "...", "C": "...", "D": "..." },
+  "type": "WORD_CHOICE",
+  "passage_excerpt": "Sentence with [BLANK] — only for WORD_CHOICE, TRANSITION, STANDARD_ENGLISH. Set null for all others.",
+  "question": "Which choice completes the text with the most logical and precise word or phrase?",
+  "choices": {
+    "A": "first choice",
+    "B": "second choice",
+    "C": "third choice",
+    "D": "fourth choice"
+  },
   "correct": "B",
-  "explanation": "Why the correct answer is right.",
-  "trap_explanations": { "A": "...", "C": "...", "D": "..." }
+  "explanation": "Why the correct answer is right, grounded in the passage.",
+  "trap_explanations": {
+    "A": "Why A is tempting but wrong",
+    "C": "Why C is tempting but wrong",
+    "D": "Why D is tempting but wrong"
+  }
 }`;
 
 export default async function handler(req, res) {
@@ -105,13 +250,72 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const passage = passages[Math.floor(Math.random() * passages.length)];
+    const useNotes = Math.random() < 0.25;
+    let userPrompt;
+    let passage;
+
+    if (useNotes) {
+      // Rhetorical synthesis — use notes set
+      const notesSet = notesSets[Math.floor(Math.random() * notesSets.length)];
+      passage = {
+        id: notesSet.id,
+        title: `Notes: ${notesSet.topic}`,
+        author: 'Student Notes',
+        year: null,
+        genre: 'rhetorical_synthesis',
+        text: notesSet.notes.map(n => `• ${n}`).join('\n'),
+      };
+      userPrompt = `Generate a RHETORICAL_SYNTHESIS SAT question using these student notes:
+
+Topic: ${notesSet.topic}
+Notes:
+${notesSet.notes.map(n => `• ${n}`).join('\n')}
+
+The question stem must state a specific goal. All 4 answer choices must be complete sentences using information from the notes. Respond with ONLY a JSON object.`;
+
+    } else {
+      // Use a real public domain passage from passages.js
+      // 10% chance of paired passage (cross-text connections)
+      const usePaired = Math.random() < 0.10;
+
+      if (usePaired) {
+        const paired = getPairedPassage();
+        passage = {
+          ...paired,
+          text: `Text 1\n${paired.text_a.text}\n\nText 2\n${paired.text_b.text}`,
+        };
+        userPrompt = `Generate a CROSS_TEXT SAT question for these two paired passages. The question should ask how the author of Text 2 would respond to a claim in Text 1, or what both texts have in common.
+
+Text 1 by ${paired.text_a.author} (${paired.text_a.year}):
+${paired.text_a.text}
+
+Text 2 by ${paired.text_b.author} (${paired.text_b.year}):
+${paired.text_b.text}
+
+Use question stem: "Based on the texts, how would [Text 2 author] most likely respond to the claim in Text 1 that [specific claim]?"
+Respond with ONLY a JSON object.`;
+
+      } else {
+        passage = getRandomPassage();
+        const types = ['WORD_CHOICE', 'MAIN_IDEA', 'TEXT_STRUCTURE', 'COMMAND_OF_EVIDENCE', 'LOGICAL_COMPLETION', 'TRANSITION', 'STANDARD_ENGLISH'];
+        const chosenType = types[Math.floor(Math.random() * types.length)];
+        userPrompt = `Generate a ${chosenType} SAT question for this passage:
+
+Title: "${passage.title}" by ${passage.author} (${passage.year})
+Genre: ${passage.genre}
+
+Passage:
+${passage.text}
+
+Respond with ONLY a JSON object.`;
+      }
+    }
 
     const response = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Generate a SAT question for this passage:\n\nTitle: "${passage.title}" by ${passage.author} (${passage.year})\n\n${passage.text}\n\nRespond with ONLY a JSON object.` }
+        { role: 'user', content: userPrompt }
       ],
       temperature: 0.7,
     });
