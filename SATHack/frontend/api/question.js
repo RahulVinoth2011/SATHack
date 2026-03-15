@@ -371,6 +371,38 @@ TRAP RULES:
 - Modifier attachment trap: students don't notice the dangling modifier
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TYPE 12 — QUOTATION EVIDENCE (Textual Command of Evidence — Quotation subtype)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Format: Passage makes a claim about a literary work or person. Question asks which quotation best illustrates that claim.
+Question stems (EXACT — use one):
+- "Which quotation from [work] most effectively illustrates the claim?"
+- "Which choice most effectively uses a quotation from [work] to illustrate the claim?"
+
+Real CB example (King Lear — "He later expresses regret for his actions"):
+A) "I am a man / more sinned against than sinning."
+B) "This tempest will not give me leave to ponder / On things would hurt me more."
+C) "Beat at this gate that let thy folly in / And thy dear judgement out!"
+D) "I will do such things— / What they are yet, I know not; but they shall be / The terrors of the earth!"
+Answer: C — directly expresses self-blame and regret for poor judgment.
+
+Real CB example (Young Girl — "Mansfield frequently contrasts pleasant appearance with unpleasant attitude"):
+A) "I can't bear flowers on a table." [attitude but no appearance contrast]
+B) "shook the poor little puff as though she loathed it, and dabbed her lovely nose." [CORRECT — loathed/lovely is the contrast]
+C) "she couldn't stand this place a moment longer" [attitude but no appearance]
+D) "She lowered her eyes and drummed on the table." [attitude but no appearance]
+Answer: B — the word "lovely" (appearance) next to "loathed" (attitude) directly illustrates the contrast.
+
+Strategy: The passage sets up a specific claim. Find the quotation that directly and specifically illustrates THAT EXACT claim — not just any relevant quotation from the work.
+
+TRAP RULES:
+- Adjacent claim trap: quotation is from the right work and sounds relevant but illustrates a DIFFERENT aspect than what the claim states
+- Partial match trap: quotation shows one part of the claim (e.g., unpleasant attitude) but not the other (e.g., pleasant appearance)
+- Too indirect trap: quotation is related to the topic but doesn't directly illustrate the specific claim
+- Wrong tone trap: quotation has the right subject but wrong emotional register
+
+IMPORTANT FOR GENERATION: Since we use public domain passages, generate fictional short quotations that would plausibly appear in the passage, or use actual text from the passage. Frame the passage setup with a specific claim like "In describing [character], [author] frequently [specific pattern], as when [author] writes..." then provide 4 quotation-style answer choices.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CROSS-TEXT CONNECTIONS (Bonus type — paired passages)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Format: Two short passages on related topics (Text 1 and Text 2).
@@ -419,20 +451,29 @@ CRITICAL: Your ENTIRE response must be a single valid JSON object. No explanatio
 }`;
 
 // ── QUESTION TYPE WEIGHTS ────────────────────────────────────────────────────
-// Matches approximate real SAT distribution
+// Adjusted to match real SAT distribution and boost underrepresented types
 const PASSAGE_TYPES = [
   'WORDS_IN_CONTEXT',
-  'WORDS_IN_CONTEXT',         // 2x weight — most common on real SAT
+  'WORDS_IN_CONTEXT',         // most common on real SAT
+  'WORDS_IN_CONTEXT',
   'TEXT_PURPOSE',
   'TEXT_STRUCTURE',
   'MAIN_IDEA',
   'DETAIL',
   'COMMAND_OF_EVIDENCE',
+  'COMMAND_OF_EVIDENCE',
+  'INFERENCES',
+  'INFERENCES',               // boosted — "Which choice most logically completes the text?"
   'INFERENCES',
   'TRANSITIONS',
-  'TRANSITIONS',              // 2x weight
+  'TRANSITIONS',
+  'BOUNDARIES',               // boosted — "conforms to conventions of Standard English"
   'BOUNDARIES',
+  'BOUNDARIES',
+  'FORM_STRUCTURE_SENSE',     // boosted — "conforms to conventions of Standard English"
   'FORM_STRUCTURE_SENSE',
+  'FORM_STRUCTURE_SENSE',
+  'QUOTATION_EVIDENCE',       // new — "Which quotation most effectively illustrates the claim?"
 ];
 
 export default async function handler(req, res) {
@@ -510,7 +551,7 @@ ${passage.text}
 
 Question type to generate: ${chosenType}
 - Use the EXACT question stem specified for this type in your instructions
-- For ${chosenType === 'WORDS_IN_CONTEXT' || chosenType === 'TRANSITIONS' || chosenType === 'BOUNDARIES' || chosenType === 'FORM_STRUCTURE_SENSE' ? 'this fill-in-blank type: put the sentence containing [BLANK] in passage_excerpt' : 'this type: set passage_excerpt to null'}
+- For ${['WORDS_IN_CONTEXT', 'TRANSITIONS', 'BOUNDARIES', 'FORM_STRUCTURE_SENSE'].includes(chosenType) ? 'this fill-in-blank type: put the sentence containing [BLANK] in passage_excerpt' : chosenType === 'QUOTATION_EVIDENCE' ? 'QUOTATION_EVIDENCE: set passage_excerpt to null. Frame the question as a claim about the passage, then provide 4 short quotation-style answer choices in quotes' : 'this type: set passage_excerpt to null'}
 - Include all 4 trap types for this question type in your wrong answers
 - Use formal SAT-register language throughout
 

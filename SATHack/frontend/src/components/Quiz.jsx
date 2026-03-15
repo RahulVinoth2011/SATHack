@@ -19,7 +19,7 @@ const TYPE_LABELS = {
   TRANSITION: 'Transitions',
   LOGICAL_COMPLETION: 'Inferences',
   STANDARD_ENGLISH: 'Standard English',
-  CROSS_TEXT: 'Cross-Text Connections',
+  QUOTATION_EVIDENCE: 'Command of Evidence',
 }
 
 const TYPE_COLORS = {
@@ -39,7 +39,7 @@ const TYPE_COLORS = {
   FORM_STRUCTURE_SENSE: 'bg-teal-100 text-teal-700',
   STANDARD_ENGLISH: 'bg-teal-100 text-teal-700',
   CROSS_TEXT_CONNECTIONS: 'bg-rose-100 text-rose-700',
-  CROSS_TEXT: 'bg-rose-100 text-rose-700',
+  QUOTATION_EVIDENCE: 'bg-yellow-100 text-yellow-800',
 }
 
 // Format passage text — handles [BLANK], Text 1/2 headers, bullet points
