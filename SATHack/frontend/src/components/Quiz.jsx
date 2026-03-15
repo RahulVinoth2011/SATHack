@@ -65,8 +65,7 @@ export default function Quiz({ total, onFinish }) {
     setFeedback(null)
     setTimer(0)
     try {
-      const API = import.meta.env.VITE_API_URL || 'http://localhost:3001'
-      const res = await fetch(`${API}/api/question`)
+      const res = await fetch('/api/question')
       if (!res.ok) throw new Error('Server error')
       const json = await res.json()
       if (json.error) throw new Error(json.error)
@@ -98,7 +97,7 @@ export default function Quiz({ total, onFinish }) {
     // Get AI feedback
     setFeedbackLoading(true)
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/feedback`, {
+      const res = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
