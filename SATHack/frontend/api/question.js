@@ -317,7 +317,7 @@ Respond with ONLY a JSON object.`;
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userPrompt }
       ],
-      temperature: 0.7,
+      temperature: 0.95,
     });
 
     let raw = response.choices[0].message.content.trim();
