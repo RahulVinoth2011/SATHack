@@ -102,7 +102,7 @@ export default function Start({ onStart }) {
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <img src="/wayzata.png" alt="Wayzata" className="h-8 w-8 object-contain opacity-50" />
           <p className="text-gray-400 text-[10px] font-bold uppercase tracking-tighter text-center">
-            Wayzata Inventors Club <span className="mx-2 text-gray-200">|</span> 2026
+            Wayzata Inventors Club <span className="mx-2 text-gray-200">|</span> 2024
           </p>
           <img src="/inventors.png" alt="Inventors Club" className="h-8 w-8 object-contain opacity-50" />
         </div>
