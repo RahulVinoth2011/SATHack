@@ -97,14 +97,14 @@ const notesSets = [
 const SYSTEM_PROMPT = `You are a Digital SAT question writer. Generate ONE question matching the exact style of official College Board SAT questions.
 
 QUESTION TYPES AND EXACT STEMS:
-- WORDS_IN_CONTEXT: "Which choice completes the text with the most logical and precise word or phrase?" — replace one key word with [BLANK] in passage_excerpt. All 4 choices same part of speech.
+- WORDS_IN_CONTEXT: "Which choice completes the text with the most logical and precise word or phrase?" — Write a NEW 1-3 sentence passage about the same topic/context as the source (do NOT copy sentences verbatim). Put [BLANK] where one key word belongs. All 4 choices same part of speech.
 - TEXT_PURPOSE: "Which choice best describes the function of the underlined sentence?" — each choice starts with a verb (offers/describes/summarizes/criticizes/presents).
 - TEXT_STRUCTURE: "Which choice best describes the overall structure of the text?" — each choice has TWO parts connected by "then."
 - MAIN_IDEA: "Which choice best states the main idea of the text?"
 - DETAIL: "According to the text, [specific question]?"
 - COMMAND_OF_EVIDENCE: "Which finding, if true, would most directly support/weaken [name]'s hypothesis?"
-- INFERENCES: "Which choice most logically completes the text?" — passage ends mid-sentence, put full passage ending in [BLANK] in passage_excerpt.
-- TRANSITIONS: "Which choice completes the text with the most logical transition?" — replace transition word with [BLANK] in passage_excerpt. Choices are single transition words/phrases only.
+- INFERENCES: "Which choice most logically completes the text?" — Write a NEW passage about the same topic (do NOT copy verbatim). The passage builds an argument and ends with [BLANK]. Put the new passage in passage_excerpt.
+- TRANSITIONS: "Which choice completes the text with the most logical transition?" — take one sentence from the passage, replace a transition word with [BLANK]. Choices are single transition words/phrases only.
 - BOUNDARIES: "Which choice completes the text so that it conforms to the conventions of Standard English?" — all 4 choices are the SAME words differing ONLY in punctuation.
 - FORM_STRUCTURE_SENSE: "Which choice completes the text so that it conforms to the conventions of Standard English?" — all 4 choices differ in ONE grammatical element only (verb form, tense, possessive, pronoun).
 - QUOTATION_EVIDENCE: "Which quotation from the text most effectively illustrates the claim?" — passage makes a specific claim, choices are 4 short quoted passages.
