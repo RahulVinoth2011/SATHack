@@ -3,6 +3,54 @@ import { getRandomPassage, getPairedPassage } from '../passages.js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+function extractFirstJsonObject(text) {
+  if (!text) return null;
+  const s = String(text);
+  const start = s.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') depth++;
+    if (ch === '}') depth--;
+    if (depth === 0) return s.slice(start, i + 1);
+  }
+  return null;
+}
+
+function ensureChoices(question) {
+  if (!question || typeof question !== 'object') return question;
+  if (!question.choices || typeof question.choices !== 'object') question.choices = {};
+  ['A', 'B', 'C', 'D'].forEach((l) => {
+    if (!question.choices[l] || typeof question.choices[l] !== 'string' || !question.choices[l].trim()) {
+      question.choices[l] = '(unavailable)';
+    }
+  });
+  if (!question.trap_explanations || typeof question.trap_explanations !== 'object') question.trap_explanations = {};
+  return question;
+}
+
 const notesSets = [
   {
     id: "notes_bees",
@@ -237,28 +285,45 @@ ${passage.text}
 Respond with ONLY a JSON object.`;
     }
 
-    const response = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.9,
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await groq.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt }
+          ],
+          // If Groq supports JSON mode, this drastically reduces malformed JSON.
+          response_format: { type: 'json_object' },
+          temperature: 0.7,
+        });
+
+        const content = response?.choices?.[0]?.message?.content;
+        // Some providers return already-JSON text; still parse defensively.
+        const cleaned = String(content ?? '').trim()
+          .replace(/^```json\s*/i, '')
+          .replace(/^```\s*/i, '')
+          .replace(/\s*```$/i, '')
+          .trim();
+
+        const jsonText = extractFirstJsonObject(cleaned);
+        if (!jsonText) throw new Error('No JSON object in model response');
+
+        const question = ensureChoices(JSON.parse(jsonText));
+        res.status(200).json({ passage, question });
+        return;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
+    // Surface the actual parse/provider error in logs.
+    console.error('api/question failed', {
+      message: lastErr?.message,
+      name: lastErr?.name,
     });
-
-    let raw = response.choices[0].message.content.trim();
-    raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start === -1 || end === -1) throw new Error('No JSON in response');
-    const question = JSON.parse(raw.slice(start, end + 1));
-
-    // Safety check — ensure all choices exist
-    ['A', 'B', 'C', 'D'].forEach(l => {
-      if (!question.choices[l]) question.choices[l] = '(unavailable)';
-    });
-
-    res.status(200).json({ passage, question });
+    throw lastErr ?? new Error('Unknown error');
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
